@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#faf8f5">
+  <meta name="description" content="Kin — a social roleplay prototype. Play characters from WWE, The Vampire Diaries, Supernatural, Twilight, or a world of your own.">
+  <title>Kin · Your characters. Your stories.</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="accounts.css">
+  <style>
+    [hidden]{display:none!important}.profile-settings{display:flex;justify-content:flex-end;margin:0 0 16px}
+    :root{--accent:#8a638e;--accent-dark:#705075;--peach:#eee4ef}
+    .brand-flower,.little-flower{color:#92719c}.nav-item.active,.mobile-nav button.active{background:#eee5ef;color:#805784}.sidebar-note{color:#796882}.welcome-card{background:#eae4ee}.welcome-card:after{border-color:#cfc2d7}.welcome-card .eyebrow{color:#918298}.welcome-spark{color:#a58aad}.welcome-card>p:not(.eyebrow){color:#827287}.welcome-card .handwritten{color:#8a638e;text-align:left}.profile-cover{background:linear-gradient(130deg,#eadcf0,#dfdce8)}.profile-cover:after{color:#b7a2c260}.avatar-june{background:#dddccf;color:#6e7052}.avatar-daniel{background:#e6d9df;color:#895f70}.avatar-emma{background:#d9e4e0;color:#56796c}.avatar-maya,.self-avatar{background:#e7dbeb;color:#805784}
+    .fandom-intro{display:flex;gap:9px;align-items:center;font-size:10px;color:var(--muted);margin:0 0 14px;line-height:1.8}.fandom-intro .pill{font-size:8px;letter-spacing:.7px;white-space:nowrap;background:#ece5ef;color:#8a638e}.fandom-filter{min-width:0}.fandom-filter select{border:1px solid var(--line);background:transparent;color:#797b71;border-radius:7px;padding:7px;max-width:155px;font-size:10px}.feed-order{margin:-5px 2px 15px;font-size:9px;color:#9b998e}.post-visibility{float:right;font-size:9px;display:inline-flex;gap:4px;align-items:center;color:#9b9b8f;font-weight:400}.post-visibility svg{height:10px;width:10px}.post-audience{white-space:nowrap}.post-audience.mode-ooc{background:#f0e8f4;color:#93709d}.post-caption{line-height:1.95}.post-comments .comment{white-space:pre-wrap}.reply-mode{font-size:8px;padding:3px 5px;background:#f0eaf2;color:#94779d;border-radius:4px;margin-right:7px;vertical-align:middle;white-space:nowrap}.comment-form select{font-size:9px;border:1px solid var(--line);background:var(--paper);border-radius:5px;padding:6px 3px;color:#85758b;width:47px}
+    .character-byline{font-size:11px;color:#8d7793;line-height:1.8;margin:8px 0}.character-details h3{font-size:12px;margin:18px 0 8px}.character-details p{font-size:12px;color:var(--muted);line-height:1.85;white-space:pre-wrap}.character-details>.text-button{margin-top:12px}.posting-as{display:flex;align-items:center;gap:7px;font-size:11px;flex-wrap:wrap;color:var(--muted)}.posting-as strong{font-weight:600;color:var(--ink)}.compact-upload{min-height:100px;margin-top:18px;padding:13px}.scene-input{min-height:155px!important;line-height:1.8}.form-columns{display:grid;grid-template-columns:1.2fr 1fr;gap:12px}.portrait-editor{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.portrait-editor input{font-size:10px;max-width:240px;min-width:0}.portrait-editor .avatar{width:48px;height:48px}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.person-profile-detail .avatar{margin:auto}.people-strip{gap:15px}.person-bubble{font-size:9px;min-width:57px}.account-button small{font-size:8px}.sidebar-note p{font-size:18px}.content-card .pill{line-height:1.8;display:inline-block}
+    @media(max-width:1200px){.feed-toolbar{align-items:flex-start;flex-wrap:wrap;row-gap:10px}.people-strip{gap:14px}.fandom-intro{font-size:9px}.profile-body .pill{font-size:9px}.person-row .row-actions select{max-width:100px}}
+    @media(max-width:700px){.page-heading:before{color:var(--accent)}.fandom-intro{font-size:9px;align-items:flex-start}.fandom-intro>span:last-child{max-width:260px}.feed-toolbar{align-items:center;gap:6px}.tabs{gap:1px}.tab{padding:8px 7px;font-size:9px}.fandom-filter select{max-width:125px;font-size:9px}.people-strip{gap:16px}.person-bubble{min-width:48px}.post-meta{font-size:9px;max-width:190px;flex-wrap:wrap;line-height:1.5}.post-visibility{font-size:8px}.post-audience{font-size:8px;padding:5px}.profile-name-row h2{font-size:18px}.profile-body .pill{font-size:8px}.form-columns{grid-template-columns:1fr}.posting-as{font-size:10px}.person-row .post-author{font-size:11px}.person-row p{font-size:9px}.comment-form{gap:6px}.comment-form input{font-size:11px;padding:9px 6px}}
+  </style>
+  <script src="accounts.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body class="auth-loading">
+  <section id="account-gate" aria-label="Your Kin account"><p>Opening your next chapter…</p></section>
+  <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1Z"/></symbol>
+    <symbol id="i-people" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6m2 3a5 5 0 0 1 3 5v2"/></symbol>
+    <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4Z"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></symbol>
+    <symbol id="i-heart" viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0l-1 1-1-1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/></symbol>
+    <symbol id="i-comment" viewBox="0 0 24 24"><path d="M21 11.5a9 9 0 0 1-9.5 9 10 10 0 0 1-4-.9L3 21l1.4-4.5a10 10 0 0 1-.9-4A9 9 0 0 1 21 11.5Z"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="m9 3-1 3-3 1-2 4 2 2v3l4 3 3-1 3 1 4-3v-3l2-2-2-4-3-1-1-3Z"/><circle cx="12" cy="11" r="3"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 4-6 5 7"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-leaf" viewBox="0 0 24 24"><path d="M5 19C-1 6 12 3 21 3c0 9-3 22-16 16Zm0 0L16 8"/></symbol>
+  </defs></svg>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a href="#feed" class="brand" aria-label="Kin home">kin<span class="brand-flower">✳</span></a>
+      <p class="brand-caption">Stay in character.</p>
+      <nav aria-label="Main navigation">
+        <button class="nav-item active" data-view="feed"><svg><use href="#i-home"/></svg><span>Your feed</span></button>
+        <button class="nav-item" data-view="people"><svg><use href="#i-people"/></svg><span>Your cast</span><span class="nav-count" id="request-count">2</span></button>
+        <button class="nav-item" data-view="saved"><svg><use href="#i-bookmark"/></svg><span>Saved posts</span></button>
+        <button class="nav-item" data-view="profile"><span class="avatar avatar-xs self-avatar">YC</span><span>Your character</span></button>
+      </nav>
+      <button class="button button-primary create-button" data-action="create"><svg><use href="#i-plus"/></svg> Write a post</button>
+      <div class="sidebar-note"><span class="little-flower">✳</span><p>Familiar worlds.<br>Unwritten stories.</p><span>For the characters you love<br>and the ones you create.</span></div>
+      <div class="sidebar-bottom"><button class="nav-item" data-view="settings"><svg><use href="#i-settings"/></svg><span>Settings & trust</span></button><button class="account-button" data-view="profile"><span class="avatar self-avatar">YC</span><span><strong>Your character</strong><small>Unofficial fan roleplay</small></span><span class="account-dots">···</span></button></div>
+    </aside>
+    <main id="main-content" tabindex="-1">
+      <header class="page-heading"><div><p class="eyebrow" id="page-eyebrow">YOUR CHARACTERS. YOUR STORIES.</p><h1 id="page-title">Step into the story<span>.</span></h1><p id="page-description">Familiar worlds. Original plots. Written together.</p></div><span class="private-badge"><svg><use href="#i-lock"/></svg>Your private circle</span></header>
+      <div class="prototype-notice"><span class="notice-dot"></span>Roleplay prototype <span class="notice-divider">/</span> Sample fan profiles · Saved in this browser</div>
+      <section id="view-content" aria-label="Your feed"></section>
+      <footer class="main-footer">Unofficial fan roleplay. Your imagination, shared. <span>✳</span></footer>
+    </main>
+    <aside class="right-panel" aria-label="Your community">
+      <section class="welcome-card"><span class="welcome-spark">✳</span><p class="eyebrow">THE NEXT CHAPTER IS YOURS</p><h2>New world.<br>Same you.</h2><p>A ring. A small town. A road at midnight.<br>Who will you be when the story begins?</p><button class="text-button handwritten" data-action="edit-profile">Create your character ↗</button></section>
+      <section class="connections-panel"><div class="section-title"><h2>Your cast</h2><button class="text-button" data-view="people">View all <span>↗</span></button></div><div id="sidebar-people"></div><button class="invite-link" data-action="invite"><svg><use href="#i-plus"/></svg> Invite a writer</button></section>
+      <section class="trust-note"><span class="trust-icon"><svg><use href="#i-lock"/></svg></span><div><h3>Good stories. Clear boundaries.</h3><p>Discuss plots together. Respect the writer behind the character.</p><button class="text-button" data-view="settings">Our roleplay promise <span>↗</span></button></div></section>
+      <p class="right-footer">Fan-made stories. Unofficial portrayals.<br><span>Kin prototype · Not affiliated with featured franchises</span></p>
+    </aside>
+  </div>
+  <nav class="mobile-nav" aria-label="Mobile navigation"><button class="active" data-view="feed" aria-label="Your feed"><svg><use href="#i-home"/></svg></button><button data-view="people" aria-label="Your cast"><svg><use href="#i-people"/></svg></button><button class="mobile-create" data-action="create" aria-label="Write a roleplay post"><svg><use href="#i-plus"/></svg></button><button data-view="saved" aria-label="Saved posts"><svg><use href="#i-bookmark"/></svg></button><button data-view="profile" aria-label="Your character"><span class="avatar avatar-xs self-avatar">YC</span></button></nav>
+  <dialog id="modal" aria-labelledby="modal-title"><div class="modal-heading"><h2 id="modal-title"></h2><button class="icon-button" id="close-modal" aria-label="Close dialog"><svg><use href="#i-close"/></svg></button></div><div id="modal-content"></div></dialog>
+  <div class="toast" id="toast" role="status"></div>
+</body>
+</html>
