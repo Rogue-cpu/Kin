@@ -28,7 +28,7 @@ Set these environment variables in your terminal or your development environment
 | Variable | Local example | Purpose |
 | --- | --- | --- |
 | `DATABASE_URL` | `postgresql://user:password@localhost:5432/kin` | Server-only database connection |
-| `APP_ORIGIN` | `http://localhost:3000` | Exact browser origin, without a trailing slash |
+| `APP_ORIGIN` | `http://localhost:3000` | Public app origin; whitespace and trailing slashes are normalized. Optional on Railway when `RAILWAY_PUBLIC_DOMAIN` is available |
 | `REGISTRATION_CODE` | Generate a private random value of at least 24 characters | Code you share with invited writers |
 | `PORT` | `3000` | Optional local HTTP port |
 | `NODE_ENV` | `development` | Production enables Secure cookies and requires HTTPS |
@@ -52,7 +52,7 @@ The selected project is [Kin's Railway project](https://railway.com/project/c784
 1. In that project and environment, add a dedicated PostgreSQL service if one is not already present.
 2. Add an app service from `Rogue-cpu/Kin`, using the repository root and Dockerfile.
 3. Reference the Postgres service's `DATABASE_URL` in the app service. Keep the database on Railway's private network. The database connection belongs only in the server environment.
-4. Generate a public HTTPS domain for the app. Set `APP_ORIGIN` to that exact origin, with no trailing slash.
+4. Generate a public HTTPS domain for the app. Kin uses `RAILWAY_PUBLIC_DOMAIN` automatically when `APP_ORIGIN` is unset. For a custom domain, set `APP_ORIGIN` to the public app address, for example `https://kin.example.com`. Trailing slashes and surrounding whitespace are accepted. Do not use the Railway dashboard project URL, the database URL, or a URL with a path, query, or fragment.
 5. Set a private `REGISTRATION_CODE` with at least 24 random characters. `NODE_ENV=production` is already set by the Dockerfile.
 6. Deploy. Schema creation runs in a transaction at startup and uses `CREATE TABLE IF NOT EXISTS`. No seed characters, posts, or accounts are created in production.
 7. Verify `/api/health`, register your own account, save your recovery code, and test sharing with a second invited writer.

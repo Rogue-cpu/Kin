@@ -47,9 +47,19 @@ const CAN_READ = `(p.author=$1 OR EXISTS (
     OR (c.recipient=p.author AND c.requester=$1 AND (p.audience='all' OR p.audience=c.recipient_circle)))
 ))`;
 
+export function resolveAppOrigin(rawOrigin, railwayDomain) {
+  const configured = typeof rawOrigin === 'string' ? rawOrigin.trim() : '';
+  const value = configured || (typeof railwayDomain === 'string' && railwayDomain.trim() ? 'https://' + railwayDomain.trim() : '');
+  const message = 'Set APP_ORIGIN to the public app address, such as https://kin-production.up.railway.app, without a path, query, or fragment. Railway can also supply RAILWAY_PUBLIC_DOMAIN.';
+  let parsed;
+  try { parsed = new URL(value); } catch { throw new HttpError(500, message); }
+  deny(!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.pathname.split('/').some(Boolean) || parsed.search || parsed.hash, 500, message);
+  return parsed.origin;
+}
+
 export async function createApplication({ db, origin, registrationCode, production = true, migrate = true }) {
   deny(!db, 500, 'Database is required.');
-  deny(!origin || new URL(origin).origin !== origin, 500, 'APP_ORIGIN must be an origin without a trailing slash.');
+  origin = resolveAppOrigin(origin);
   deny(production && !origin.startsWith('https://'), 500, 'Production requires an HTTPS origin.');
   deny(typeof registrationCode !== 'string' || registrationCode.length < 24, 500, 'Set a REGISTRATION_CODE of at least 24 characters.');
   if (migrate) await db.query(await readFile(new URL('./schema.sql', import.meta.url), 'utf8'));
@@ -278,7 +288,7 @@ if(process.argv[1] && fileURLToPath(import.meta.url)===resolve(process.argv[1]))
   const db=new pg.Pool({connectionString:process.env.DATABASE_URL,max:10,connectionTimeoutMillis:10000,idleTimeoutMillis:30000});
   try {
     if(!process.env.DATABASE_URL)throw new Error('Set DATABASE_URL to the Railway Postgres reference.');
-    const server=await createApplication({db,origin:process.env.APP_ORIGIN,registrationCode:process.env.REGISTRATION_CODE,production:process.env.NODE_ENV==='production'});
+    const server=await createApplication({db,origin:resolveAppOrigin(process.env.APP_ORIGIN, process.env.RAILWAY_PUBLIC_DOMAIN),registrationCode:process.env.REGISTRATION_CODE,production:process.env.NODE_ENV==='production'});
     const port=Number(process.env.PORT || 3000);server.listen(port,'0.0.0.0',()=>console.log(`Kin is listening on port ${port}`));
     const stop=()=>{server.close(()=>db.end().then(()=>process.exit(0)));setTimeout(()=>process.exit(1),10000).unref();};process.on('SIGTERM',stop);process.on('SIGINT',stop);
   }catch(error){console.error(error.message);await db.end();process.exitCode=1;}
