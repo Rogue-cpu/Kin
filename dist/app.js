@@ -2,7 +2,7 @@
 
 (() => {
   const KEY = 'kin.roleplay.v1';
-  const FANDOMS = ['WWE', 'The Vampire Diaries', 'Supernatural', 'Twilight', 'Original / Other'];
+  const FANDOMS = ['WWE', 'The Vampire Diaries', 'Supernatural', 'Twilight', 'High School DxD', 'Game of Thrones', 'Outer Banks', 'The Originals', 'Legacies', 'The Witcher', 'Original / Other'];
   const svg = (name) => `<svg aria-hidden="true"><use href="#i-${name}"/></svg>`;
   const escape = (value) => String(value).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
   const seed = () => ({
@@ -177,7 +177,7 @@
     const people = state.people.slice(0, 5);
     let posts = visiblePosts().filter((post) => (filter === 'all' || post.mode === filter) && (fandomFilter === 'all' || person(post.author).fandom === fandomFilter));
     if (personFilter) posts = posts.filter((post) => post.author === personFilter);
-    content.innerHTML = `<div class="fandom-intro"><span class="pill">FAN ROLEPLAY</span><span>WWE · The Vampire Diaries · Supernatural · Twilight</span></div><div class="people-strip" aria-label="Filter by character"><button class="person-bubble" data-action="edit-profile"><span class="bubble-ring">${avatar(person('self'))}</span>Your character</button>${people.map((who) => `<button class="person-bubble ${personFilter === who.id ? 'selected-person' : ''}" data-action="filter-person" data-id="${escape(who.id)}" aria-pressed="${personFilter === who.id}"><span class="bubble-ring">${avatar(who)}</span>${escape(who.name.split(' ')[0])}</button>`).join('')}</div>
+    content.innerHTML = `<div class="fandom-intro"><span class="pill">FAN ROLEPLAY</span><span>Choose your fandom. Find your people.</span></div><div class="people-strip" aria-label="Filter by character"><button class="person-bubble" data-action="edit-profile"><span class="bubble-ring">${avatar(person('self'))}</span>Your character</button>${people.map((who) => `<button class="person-bubble ${personFilter === who.id ? 'selected-person' : ''}" data-action="filter-person" data-id="${escape(who.id)}" aria-pressed="${personFilter === who.id}"><span class="bubble-ring">${avatar(who)}</span>${escape(who.name.split(' ')[0])}</button>`).join('')}</div>
       <div class="feed-toolbar"><div class="tabs" role="group" aria-label="Post mode filters">${[['all', 'All posts'], ['ic', 'In character'], ['ooc', 'Out of character']].map(([key, label]) => `<button class="tab ${filter === key ? 'active' : ''}" data-filter="${key}" aria-pressed="${filter === key}">${label}</button>`).join('')}</div><label class="fandom-filter"><span class="sr-only">Filter by fandom</span><select id="fandom-filter">${fandomOptions(fandomFilter, true)}</select></label></div>
       ${personFilter ? `<button class="clear-filter" data-action="clear-person">Showing ${escape(person(personFilter)?.name || 'one person')} · Clear filter ×</button>` : ''}
       <div class="compose-card">${avatar(person('self'))}<button class="compose-prompt" data-action="create">What happens next, ${escape(state.profile.name.split(' ')[0])}?</button><button class="compose-image" data-action="create" aria-label="Create a roleplay post">${svg('plus')}</button></div><p class="feed-order">Chronological feed · Newest posts first</p>

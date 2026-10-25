@@ -10,7 +10,7 @@ import { resolve } from 'node:path';
 
 const derive = promisify(scrypt);
 const hash = value => createHash('sha256').update(value).digest('hex');
-const FANDOMS = ['WWE','The Vampire Diaries','Supernatural','Twilight','Original / Other'];
+const FANDOMS = ['WWE','The Vampire Diaries','Supernatural','Twilight','High School DxD','Game of Thrones','Outer Banks','The Originals','Legacies','The Witcher','Original / Other'];
 const SESSION_SECONDS = 7 * 24 * 3600;
 let activeHashes = 0;
 class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
