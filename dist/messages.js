@@ -4,6 +4,8 @@
   const icon=name=>`<svg aria-hidden="true"><use href="#i-${name}"/></svg>`;
   let root=null,context=null,kind='',epoch=0,timer=null,active=null,thread=null,chats=[],busy=false,loading=false,requestVersion=0;
   const pending=new Set();
+  let attachment=null,attachmentKey='',recorder=null,recordStream=null,recordTimer=null,recordStart=0;
+  let mediaGeneration=0;
   const portrait=member=>/^\/api\/media\/[a-f0-9-]{36}$/.test(member.portrait||'')?`<img src="${esc(member.portrait)}" alt="">`:`<span>${esc(member.name.trim().split(/\s+/).slice(0,2).map(p=>p[0]).join('').toUpperCase())}</span>`;
   const title=chat=>chat.title||chat.members.filter(m=>!m.self).map(m=>m.name).join(', ')||'Conversation';
   const avatar=chat=>`<span class="chat-avatar">${chat.is_group||chat.isGroup?icon('people'):portrait(chat.members.find(m=>!m.self)||chat.members[0])}</span>`;
@@ -23,7 +25,7 @@
     }finally{clearTimeout(timeout);pending.delete(controller);}
   }
   function error(message){const el=root?.querySelector('.chat-error');if(el)el.textContent=message;}
-  function close(){epoch++;requestVersion++;clearInterval(timer);timer=null;for(const controller of pending)controller.abort();pending.clear();root=null;context=null;thread=null;chats=[];active=null;kind='';busy=false;loading=false;}
+  function close(){clearMedia();epoch++;requestVersion++;clearInterval(timer);timer=null;for(const controller of pending)controller.abort();pending.clear();root=null;context=null;thread=null;chats=[];active=null;kind='';busy=false;loading=false;}
   function paintInbox(){
     const list=root.querySelector('.chat-list');
     list.innerHTML=chats.length?chats.map(c=>`<button class="chat-list-item ${active===c.id?'selected':''}" data-chat="${c.id}">${avatar(c)}<span><strong>${esc(title(c))}</strong><small>${esc(c.preview||'Start the conversation')}</small></span>${icon('arrow')}</button>`).join(''):'<div class="chat-empty"><h3>Your conversations start here</h3><p>Choose an approved connection to say hello or start a scene.</p><button class="button" data-chat-new>New message</button></div>';
@@ -42,13 +44,19 @@
     root.addEventListener('click',async event=>{
       const button=event.target.closest('button');if(!button||busy)return;
       try{
-        if(button.hasAttribute('data-chat-new'))newChat();
-        else if(button.dataset.chat){active=button.dataset.chat;thread=null;requestVersion++;root.classList.add('thread-open');root.querySelector('.chat-pane').innerHTML='<p class="chat-loading">Opening conversation…</p>';paintInbox();await loadThread(true);}
-        else if(button.hasAttribute('data-chat-back')){active=null;thread=null;requestVersion++;root.classList.remove('thread-open');root.querySelector('.chat-pane').innerHTML='<div class="chat-empty"><h2>Your messages</h2><p>Choose a conversation or start a new message.</p><button class="button button-primary" data-chat-new>New message</button></div>';paintInbox();}
+        if(button.dataset.startCall!==undefined){await window.KinCalls.start(active,button.dataset.startCall==='video');}
+        else if(button.hasAttribute('data-chat-photo'))root.querySelector('#chat-photo').click();
+        else if(button.hasAttribute('data-chat-record'))await recordVoice();
+        else if(button.hasAttribute('data-record-stop')){if(recorder?.state==='recording')recorder.stop();}
+        else if(button.hasAttribute('data-media-remove')){clearMedia();paintAttachment();}
+        else if(button.hasAttribute('data-chat-new')){clearMedia();newChat();}
+        else if(button.dataset.chat){clearMedia();active=button.dataset.chat;thread=null;requestVersion++;root.classList.add('thread-open');root.querySelector('.chat-pane').innerHTML='<p class="chat-loading">Opening conversation…</p>';paintInbox();await loadThread(true);}
+        else if(button.hasAttribute('data-chat-back')){clearMedia();active=null;thread=null;requestVersion++;root.classList.remove('thread-open');root.querySelector('.chat-pane').innerHTML='<div class="chat-empty"><h2>Your messages</h2><p>Choose a conversation or start a new message.</p><button class="button button-primary" data-chat-new>New message</button></div>';paintInbox();}
         else if(button.hasAttribute('data-chat-older'))await older();
         else if(button.hasAttribute('data-chat-retry'))await refresh();
       }catch(e){if(e.name!=='AbortError'){if(e.status===404||e.status===403){thread=null;active=null;root.querySelector('.chat-pane').innerHTML='<div class="chat-empty"><p>Conversation unavailable.</p></div>';root.classList.remove('thread-open');}error(e.message);}}
     });
+    root.addEventListener('change',event=>{if(event.target.id==='chat-photo'&&event.target.files[0])choosePhoto(event.target.files[0]);});
     root.addEventListener('submit',event=>{event.preventDefault();const form=event.target;if(form.id==='chat-compose')send(form);if(form.id==='chat-create')create(form);});
     root.addEventListener('keydown',event=>{if(event.target.id==='chat-text'&&event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();event.target.form.requestSubmit();}});
     refresh();timer=setInterval(refresh,3000);
@@ -68,7 +76,7 @@
   }
   function messageHTML(message,members){
     const sender=members.find(m=>m.id===message.sender)||{name:'Member',portrait:''};
-    return `<div class="chat-message ${message.self?'outgoing':'incoming'}" data-message="${message.id}">${message.self?'':`<span class="message-avatar">${portrait(sender)}</span>`}<div>${message.self?'':`<span class="message-author">${esc(sender.name)}</span>`}<p class="message-bubble">${esc(message.body)}</p><time datetime="${esc(message.created_at)}">${esc(new Date(message.created_at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}))}</time></div></div>`;
+    return `<div class="chat-message ${message.self?'outgoing':'incoming'}" data-message="${message.id}">${message.self?'':`<span class="message-avatar">${portrait(sender)}</span>`}<div>${message.self?'':`<span class="message-author">${esc(sender.name)}</span>`}${message.attachment?attachmentHTML(message.attachment):''}${message.body?`<p class="message-bubble">${esc(message.body)}</p>`:''}<time datetime="${esc(message.created_at)}">${esc(new Date(message.created_at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}))}</time></div></div>`;
   }
   function messageList(data){
     let date='';return data.messages.map(m=>{const next=new Date(m.created_at).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'}),stamp=next===date?'':`<div class="chat-date">${esc(next)}</div>`;date=next;return stamp+messageHTML(m,data.members);}).join('');
@@ -79,7 +87,7 @@
     const pane=root.querySelector('.chat-pane');
     if(!thread||initial){
       thread=data;
-      pane.innerHTML=`<header class="chat-header"><button class="icon-button" data-chat-back aria-label="Back to inbox">${icon('arrow')}</button>${avatar(data)}<div><h2>${esc(title(data))}</h2><p>${data.isGroup?data.members.length+' members':'Private conversation'} · ${kind==='personal'?'Personal':'Roleplay'}</p></div></header><div class="chat-history" role="log" aria-label="Messages" aria-live="polite"><div class="chat-older">${data.hasMore?'<button data-chat-older>Load earlier messages</button>':''}</div><p class="chat-start">${data.isGroup?'A private group for '+data.members.map(m=>esc(m.name)).join(', '):'Your conversation with '+esc(data.members.find(m=>!m.self)?.name||'your connection')}<br><span>Only members can read this chat.</span></p><div class="chat-message-list">${messageList(data)}</div></div><form id="chat-compose"><label class="sr-only" for="chat-text">Message</label><div class="message-composer"><textarea id="chat-text" required maxlength="4000" rows="1" placeholder="${kind==='personal'?'Message…':'Write a message or start a scene…'}"></textarea><button type="submit" aria-label="Send message">${icon('arrow')}</button></div><small>Enter to send · Shift + Enter for a new line</small></form>`;
+      pane.innerHTML=`<header class="chat-header"><button class="icon-button" data-chat-back aria-label="Back to inbox">${icon('arrow')}</button>${avatar(data)}<div><h2>${esc(title(data))}</h2><p>${data.isGroup?data.members.length+' members':'Private conversation'} · ${kind==='personal'?'Personal':'Roleplay'}</p></div><div class="chat-call-actions"><button class="icon-button" data-start-call="audio" aria-label="Start voice call">${icon('phone')}</button><button class="icon-button" data-start-call="video" aria-label="Start video call">${icon('video')}</button></div></header><div class="chat-history" role="log" aria-label="Messages" aria-live="polite"><div class="chat-older">${data.hasMore?'<button data-chat-older>Load earlier messages</button>':''}</div><p class="chat-start">${data.isGroup?'A private group for '+data.members.map(m=>esc(m.name)).join(', '):'Your conversation with '+esc(data.members.find(m=>!m.self)?.name||'your connection')}<br><span>Only members can read this chat.</span></p><div class="chat-message-list">${messageList(data)}</div></div><form id="chat-compose"><label class="sr-only" for="chat-text">Message</label><div class="chat-attachment-preview" aria-live="polite"></div><input id="chat-photo" type="file" accept="image/jpeg,image/png,image/webp" hidden><div class="message-composer"><button type="button" class="composer-tool" data-chat-photo aria-label="Attach photo">${icon('image')}</button><textarea id="chat-text" required maxlength="4000" rows="1" placeholder="${kind==='personal'?'Message…':'Write a message or start a scene…'}"></textarea><button type="button" class="composer-tool" data-chat-record aria-label="Record voice message">${icon('mic')}</button><button type="submit" aria-label="Send message">${icon('arrow')}</button></div><small>Enter to send · Shift + Enter for a new line</small></form>`;
       const history=pane.querySelector('.chat-history');history.scrollTop=history.scrollHeight;
     }else{
       const history=pane.querySelector('.chat-history');if(!history)return;
@@ -99,13 +107,64 @@
     }catch(e){if(e.name!=='AbortError')error(e.message);}finally{if(revision===epoch)busy=false;}
   }
   async function send(form){
-    const field=form.querySelector('textarea'),content=field.value.trim();if(!content||busy||!active)return;
-    busy=true;const revision=epoch,chat=active;const button=form.querySelector('button');button.disabled=true;error('');
+    const field=form.querySelector('textarea'),content=field.value.trim();if((!content&&!attachment)||busy||recorder||!active)return;
+    busy=true;const revision=epoch,chat=active;const button=form.querySelector('[type=submit]');button.disabled=true;error('');
+    const media=attachment,mediaKey=attachmentKey;
     // Keep an id on the draft so a retry after a lost response cannot duplicate it.
-    if(field.dataset.content!==content){field.dataset.messageId=crypto.randomUUID();field.dataset.content=content;}
-    try{await api(`/api/chats/${chat}/messages`,{id:field.dataset.messageId,text:content});if(field.value.trim()===content){field.value='';delete field.dataset.messageId;delete field.dataset.content;}await loadThread(false);field.focus();}
+    if(field.dataset.content!==content+mediaKey){field.dataset.messageId=crypto.randomUUID();field.dataset.content=content+mediaKey;}
+    try{await api(`/api/chats/${chat}/messages`,{id:field.dataset.messageId,text:content,attachment:media});if(attachmentKey===mediaKey){clearMedia();paintAttachment();}if(field.value.trim()===content){field.value='';delete field.dataset.messageId;delete field.dataset.content;}await loadThread(false);field.focus();}
     catch(e){if(e.name!=='AbortError')error(e.message);}
     finally{if(revision===epoch){busy=false;button.disabled=false;}}
   }
-  window.KinMessages={render,close,startWith(id){if(!root)return;newChat();const input=Array.from(root.querySelectorAll('[name=member]')).find(input=>input.value===id);if(input)input.checked=true;},get busy(){return busy;}};
+  function attachmentHTML(media){
+    if(!/^\/api\/chat-media\/[a-f0-9-]{36}$/.test(media.url))return '';
+    return media.mime==='image/jpeg'?`<a class="chat-photo-link" href="${esc(media.url)}" target="_blank" rel="noopener"><img class="chat-photo-message" src="${esc(media.url)}" alt="Photo shared in this conversation" loading="lazy"></a>`:`<div class="chat-voice-message">${icon('mic')}<audio controls preload="none" src="${esc(media.url)}" aria-label="Voice message"></audio><span>${media.duration}s</span></div>`;
+  }
+  function clearMedia(){
+    mediaGeneration++;clearInterval(recordTimer);recordTimer=null;
+    if(recorder){recorder.onstop=null;if(recorder.state==='recording')recorder.stop();recorder=null;}
+    recordStream?.getTracks().forEach(t=>t.stop());recordStream=null;attachment=null;attachmentKey='';
+  }
+  function paintAttachment(){
+    const preview=root?.querySelector('.chat-attachment-preview');if(!preview)return;
+    const field=root.querySelector('#chat-text');field.required=!attachment;
+    preview.innerHTML=attachment?`${attachment.data.startsWith('data:image/')?`<img src="${attachment.data}" alt="Selected photo">`:`<audio controls src="${attachment.data}" aria-label="Preview voice recording"></audio><span>${attachment.duration}s voice note</span>`}<button type="button" data-media-remove aria-label="Remove attachment">${icon('close')}</button>`:'';
+  }
+  const asDataURL=blob=>new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=()=>reject(new Error('The attachment could not be read.'));r.readAsDataURL(blob);});
+  async function choosePhoto(file){
+    if(busy||recorder)return;if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>10485760){error('Choose a JPEG, PNG, or WebP photo up to 10 MB.');return;}
+    clearMedia();const revision=epoch,mediaRevision=mediaGeneration;busy=true;error('');
+    try{
+      const bitmap=await createImageBitmap(file),scale=Math.min(1,1400/Math.max(bitmap.width,bitmap.height));
+      const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));canvas.getContext('2d').drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();
+      const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',.84));if(!blob||blob.size>3145728)throw new Error('That photo is too large. Choose a smaller one.');
+      const data=await asDataURL(blob);if(revision!==epoch||mediaRevision!==mediaGeneration)return;
+      attachment={data,duration:0};attachmentKey=crypto.randomUUID();paintAttachment();
+    }catch(e){if(revision===epoch)error(e.message||'That image could not be opened.');}finally{if(revision===epoch)busy=false;}
+  }
+  async function recordVoice(){
+    if(busy||recorder)return;if(window.KinCalls.busy){error('Finish your call before recording a voice note.');return;}
+    if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder){error('Voice recording is unavailable in this browser. Try a current Chrome or Safari browser.');return;}
+    clearMedia();const revision=epoch,mediaRevision=mediaGeneration;busy=true;error('');
+    try{
+      const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+      if(revision!==epoch||mediaRevision!==mediaGeneration){stream.getTracks().forEach(t=>t.stop());return;}
+      recordStream=stream;const mime=['audio/webm;codecs=opus','audio/ogg;codecs=opus','audio/mp4'].find(type=>MediaRecorder.isTypeSupported(type));
+      if(!mime)throw new Error('This browser cannot record a supported voice format.');
+      recorder=new MediaRecorder(stream,{mimeType:mime,audioBitsPerSecond:64000});const chunks=[];let bytes=0;
+      recorder.ondataavailable=event=>{if(event.data.size){chunks.push(event.data);bytes+=event.data.size;if(bytes>3000000&&recorder?.state==='recording')recorder.stop();}};
+      recorder.onerror=()=>{clearMedia();paintAttachment();error('Recording stopped. Please try again.');};
+      recorder.onstop=async()=>{
+        const seconds=Math.min(60,Math.max(1,Math.round((Date.now()-recordStart)/1000))),blob=new Blob(chunks,{type:mime.split(';')[0]});
+        clearInterval(recordTimer);recordTimer=null;stream.getTracks().forEach(t=>t.stop());recordStream=null;recorder=null;
+        try{if(!blob.size||blob.size>3145728)throw new Error('This recording could not be saved. Try a shorter note.');const data=await asDataURL(blob);if(revision!==epoch||mediaRevision!==mediaGeneration)return;attachment={data,duration:seconds};attachmentKey=crypto.randomUUID();paintAttachment();}catch(e){if(revision===epoch)error(e.message);}
+      };
+      recordStart=Date.now();recorder.start(250);
+      const preview=root.querySelector('.chat-attachment-preview');preview.innerHTML=`<span class="recording-dot"></span><span data-record-time>Recording · 0:00</span><button type="button" data-record-stop>Stop</button><button type="button" data-media-remove>Cancel</button>`;
+      recordTimer=setInterval(()=>{const seconds=Math.floor((Date.now()-recordStart)/1000);const label=root?.querySelector('[data-record-time]');if(label)label.textContent='Recording · 0:'+String(seconds).padStart(2,'0');if(seconds>=60&&recorder?.state==='recording')recorder.stop();},250);
+    }catch(e){clearMedia();paintAttachment();if(revision===epoch)error(e.name==='NotAllowedError'?'Allow microphone access in your browser to record a voice note.':e.message||'No microphone was found.');}
+    finally{if(revision===epoch)busy=false;}
+  }
+
+  window.KinMessages={render,close,startWith(id){if(!root)return;newChat();const input=Array.from(root.querySelectorAll('[name=member]')).find(input=>input.value===id);if(input)input.checked=true;},get busy(){return busy||!!recorder;}};
 })();

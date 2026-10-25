@@ -540,10 +540,10 @@
   modal.addEventListener('cancel', event => { if (saving) event.preventDefault(); });
   accounts.boot({
     onDemo() { render(); },
-    onState(next) { viewedProfile='self'; profileCollection='all'; state = next; view = 'feed'; filter = 'all'; personFilter = null; fandomFilter = 'all'; openComments.clear(); render(); },
-    onRefresh(next) { state = next; render(); },
-    onLock() { window.KinMessages.close(); state = {version:1,profile:{name:'Your character',fandom:'Original / Other'},people:[],posts:[],requests:[],outgoing:[],invitations:[]}; openComments.clear(); },
-    isBusy() { return saving || window.KinMessages.busy; }
+    onState(next) { window.KinCalls.sync(next); viewedProfile='self'; profileCollection='all'; state = next; view = 'feed'; filter = 'all'; personFilter = null; fandomFilter = 'all'; openComments.clear(); render(); },
+    onRefresh(next) { window.KinCalls.sync(next); state = next; render(); },
+    onLock() { window.KinCalls.close(); window.KinMessages.close(); state = {version:1,profile:{name:'Your character',fandom:'Original / Other'},people:[],posts:[],requests:[],outgoing:[],invitations:[]}; openComments.clear(); },
+    isBusy() { return saving || window.KinMessages.busy || window.KinCalls.busy; }
   });
   if (!storageAvailable) toast('Saved data couldn’t be loaded. You can explore the sample feed; changes may not persist.');
 })();

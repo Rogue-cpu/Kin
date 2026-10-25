@@ -90,4 +90,34 @@ CREATE TABLE IF NOT EXISTS kin_messages (
  created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS kin_messages_chat_seq ON kin_messages(chat_id,seq DESC);
+CREATE TABLE IF NOT EXISTS kin_chat_assets (
+ id uuid PRIMARY KEY, chat_id uuid NOT NULL REFERENCES kin_chats(id) ON DELETE CASCADE,
+ owner uuid NOT NULL REFERENCES kin_users(id), mime text NOT NULL, bytes bytea NOT NULL,
+ fingerprint text NOT NULL, duration integer NOT NULL DEFAULT 0, created_at timestamptz NOT NULL DEFAULT now(),
+ CHECK(octet_length(bytes) BETWEEN 1 AND 3145728),
+ CHECK(mime IN ('image/jpeg','audio/webm','audio/ogg','audio/mp4'))
+);
+ALTER TABLE kin_messages ADD COLUMN IF NOT EXISTS attachment_id uuid REFERENCES kin_chat_assets(id);
+ALTER TABLE kin_messages DROP CONSTRAINT IF EXISTS kin_messages_body_check;
+ALTER TABLE kin_messages DROP CONSTRAINT IF EXISTS kin_messages_content_check;
+ALTER TABLE kin_messages ADD CONSTRAINT kin_messages_content_check CHECK(length(body)<=4000 AND (length(body)>0 OR attachment_id IS NOT NULL));
+CREATE TABLE IF NOT EXISTS kin_calls (
+ id uuid PRIMARY KEY,chat_id uuid NOT NULL REFERENCES kin_chats(id) ON DELETE CASCADE,
+ caller uuid NOT NULL REFERENCES kin_users(id), video boolean NOT NULL DEFAULT false,
+ created_at timestamptz NOT NULL DEFAULT now(), expires_at timestamptz NOT NULL DEFAULT now()+interval '60 seconds', ended_at timestamptz
+);
+CREATE INDEX IF NOT EXISTS kin_calls_chat ON kin_calls(chat_id,created_at DESC);
+CREATE TABLE IF NOT EXISTS kin_call_members (
+ call_id uuid NOT NULL REFERENCES kin_calls(id) ON DELETE CASCADE,user_id uuid NOT NULL REFERENCES kin_users(id),
+ state text NOT NULL CHECK(state IN ('joined','left','declined')),seen_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(call_id,user_id)
+);
+CREATE TABLE IF NOT EXISTS kin_call_signals (
+ seq bigserial PRIMARY KEY, call_id uuid NOT NULL REFERENCES kin_calls(id) ON DELETE CASCADE,
+ sender uuid NOT NULL REFERENCES kin_users(id), recipient uuid NOT NULL REFERENCES kin_users(id),
+ type text NOT NULL CHECK(type IN ('offer','answer','candidate')), payload jsonb NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS kin_call_signals_recipient ON kin_call_signals(call_id,recipient,seq);
+ALTER TABLE kin_call_members ADD COLUMN IF NOT EXISTS joined_at timestamptz NOT NULL DEFAULT now();
 COMMIT;
