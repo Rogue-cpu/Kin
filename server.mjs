@@ -61,11 +61,13 @@ export function resolveAppOrigin(rawOrigin, railwayDomain) {
   return parsed.origin;
 }
 
-export async function createApplication({ db, origin, registrationCode, production = true, migrate = true, callConfig = null, giphyKey = process.env.GIPHY_API_KEY || '' }) {
+export async function createApplication({ db, origin, registrationCode, registrationMode = 'invite', production = true, migrate = true, callConfig = null, giphyKey = process.env.GIPHY_API_KEY || '' }) {
   deny(!db, 500, 'Database is required.');
   origin = resolveAppOrigin(origin);
   deny(production && !origin.startsWith('https://'), 500, 'Production requires an HTTPS origin.');
-  deny(typeof registrationCode !== 'string' || registrationCode.length < 24, 500, 'Set a REGISTRATION_CODE of at least 24 characters.');
+  deny(!['invite','open'].includes(registrationMode),500,'Set REGISTRATION_MODE to invite or open.');
+  const inviteOnly=registrationMode==='invite';
+  deny(inviteOnly && (typeof registrationCode !== 'string' || registrationCode.length < 24), 500, 'Set a REGISTRATION_CODE of at least 24 characters.');
   if (migrate) await db.query(await readFile(new URL('./schema.sql', import.meta.url), 'utf8'));
   const dummyHash = await passwordHash(randomBytes(32).toString('hex'));
   const query = (sql, values = []) => db.query(sql, values);
@@ -230,7 +232,7 @@ export async function createApplication({ db, origin, registrationCode, producti
     try {
       const url=new URL(req.url,'http://localhost'); const route=url.pathname;
       if(req.method==='GET' && route==='/api/health') { await query('SELECT 1'); send(200,{ok:true});return; }
-      if(req.method==='GET' && route==='/api/config') {send(200,{accounts:true,inviteOnly:true});return;}
+      if(req.method==='GET' && route==='/api/config') {send(200,{accounts:true,inviteOnly,defaultProfile:inviteOnly?'personal':'roleplay'});return;}
       if(req.method==='POST') deny(req.headers.origin!==origin,403,'Open Kin in its own browser tab before continuing.');
       const body=req.method==='POST' ? await jsonBody(req) : null;
       if(req.method==='POST' && ['/api/auth/register','/api/auth/login','/api/auth/recover'].includes(route)) {
@@ -241,7 +243,7 @@ export async function createApplication({ db, origin, registrationCode, producti
         await limited(`auth-network:${req.socket.remoteAddress}`,150,900);
         const password=passwordInput(body.password);
         if(route==='/api/auth/register') {
-          deny(typeof body.inviteCode!=='string' || !timingSafeEqual(Buffer.from(hash(body.inviteCode)),Buffer.from(hash(registrationCode))),403,'That invite code is not valid.');
+          deny(inviteOnly && (typeof body.inviteCode!=='string' || !timingSafeEqual(Buffer.from(hash(body.inviteCode)),Buffer.from(hash(registrationCode)))),403,'That invite code is not valid.');
           const userId=randomUUID(),recoveryCode=randomBytes(24).toString('hex');
           const encoded=await passwordHash(password);
           const character={name:'Your character',fandom:'Original / Other',role:'Original character',pronouns:'',bio:'',backstory:'',boundaries:'Ask before controlling my character or deciding a storyline outcome.',portrait:''};
@@ -323,7 +325,7 @@ if(process.argv[1] && fileURLToPath(import.meta.url)===resolve(process.argv[1]))
   const db=new pg.Pool({connectionString:process.env.DATABASE_URL,max:10,connectionTimeoutMillis:10000,idleTimeoutMillis:30000});
   try {
     if(!process.env.DATABASE_URL)throw new Error('Set DATABASE_URL to the Railway Postgres reference.');
-    const server=await createApplication({db,origin:resolveAppOrigin(process.env.APP_ORIGIN, process.env.RAILWAY_PUBLIC_DOMAIN),registrationCode:process.env.REGISTRATION_CODE,production:process.env.NODE_ENV==='production'});
+    const server=await createApplication({db,origin:resolveAppOrigin(process.env.APP_ORIGIN, process.env.RAILWAY_PUBLIC_DOMAIN),registrationCode:process.env.REGISTRATION_CODE,registrationMode:process.env.REGISTRATION_MODE || 'invite',production:process.env.NODE_ENV==='production'});
     const port=Number(process.env.PORT || 3000);server.listen(port,'0.0.0.0',()=>console.log(`Kin is listening on port ${port}`));
     const stop=()=>{server.close(()=>db.end().then(()=>process.exit(0)));setTimeout(()=>process.exit(1),10000).unref();};process.on('SIGTERM',stop);process.on('SIGINT',stop);
   }catch(error){console.error(error.message);await db.end();process.exitCode=1;}

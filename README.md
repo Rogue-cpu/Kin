@@ -1,6 +1,6 @@
 # Kin
 
-A community social media app for the people of Gloridara, with private photo sharing, updates, and messaging. One login gives you a personal profile plus optional roleplay profiles for WWE, The Vampire Diaries, Supernatural, Twilight, High School DxD, Game of Thrones, Outer Banks, The Originals, Legacies, The Witcher, and original characters. The app's name remains Kin. The welcome page and personal feed identify the Gloridara community; a fresh browser session starts in the personal profile, and an explicitly selected personal or roleplay profile remains selected on refresh. Accounts, connections, and existing content retain their separate profile contexts.
+A social media app for everyone who loves to roleplay, with private photo sharing, stories, and messaging. One login gives you a personal profile plus optional roleplay profiles for WWE, The Vampire Diaries, Supernatural, Twilight, High School DxD, Game of Thrones, Outer Banks, The Originals, Legacies, The Witcher, and original characters. The app's name remains Kin. The welcome page invites writers from everywhere. With open signup, fresh browser sessions start in roleplay; invite-only deployments default to personal. An explicitly selected personal or roleplay profile remains selected on refresh. Accounts, connections, and existing content retain their separate profile contexts.
 
 Live app: [Open Kin](https://kin-production-155f.up.railway.app).
 
@@ -41,7 +41,8 @@ Set these environment variables in your terminal or your development environment
 | --- | --- | --- |
 | `DATABASE_URL` | `postgresql://user:password@localhost:5432/kin` | Server-only database connection |
 | `APP_ORIGIN` | `http://localhost:3000` | Public app origin; whitespace and trailing slashes are normalized. Optional on Railway when `RAILWAY_PUBLIC_DOMAIN` is available |
-| `REGISTRATION_CODE` | Generate a private random value of at least 24 characters | Code you share with invited writers |
+| `REGISTRATION_MODE` | `open` or `invite` (default) | Open signup needs no invitation; invite mode requires a private code |
+| `REGISTRATION_CODE` | Private random value of at least 24 characters, required only in invite mode | Code you share with invited writers |
 | `PORT` | `3000` | Optional local HTTP port |
 | `NODE_ENV` | `development` | Production enables Secure cookies and requires HTTPS |
 
@@ -51,7 +52,7 @@ The example database URL is a placeholder. Keep real credentials in environment 
 npm start
 ```
 
-Open `http://localhost:3000`. Choose **Have an invite? Join Kin**, create a writer handle and password, and save the recovery code. Share your handle with friends, exchange requests in **Your cast**, and approve connections before sharing scenes.
+Open `http://localhost:3000`. Choose **Create new account**, create a writer handle and password, and save the recovery code. In open mode no invite code is requested. Share your handle with friends, exchange requests in **Your cast**, and approve connections before sharing scenes.
 
 Opening `dist/index.html` directly from disk still runs the original local demo, with sample fan characters and browser-only storage. The HTTP server always uses real accounts; it never falls back to sample data after an account or connection error. Existing browser demo data is not imported into real accounts.
 
@@ -65,11 +66,11 @@ The selected project is [Kin's Railway project](https://railway.com/project/c784
 2. Add an app service from `Rogue-cpu/Kin`, using the repository root and Dockerfile.
 3. Reference the Postgres service's `DATABASE_URL` in the app service. Keep the database on Railway's private network. The database connection belongs only in the server environment.
 4. Generate a public HTTPS domain for the app. Kin uses `RAILWAY_PUBLIC_DOMAIN` automatically when `APP_ORIGIN` is unset. For a custom domain, set `APP_ORIGIN` to the public app address, for example `https://kin.example.com`. Trailing slashes and surrounding whitespace are accepted. Do not use the Railway dashboard project URL, the database URL, or a URL with a path, query, or fragment.
-5. Set a private `REGISTRATION_CODE` with at least 24 random characters. `NODE_ENV=production` is already set by the Dockerfile.
+5. Set `REGISTRATION_MODE=open` to welcome writers everywhere. To restrict new signups instead, use `REGISTRATION_MODE=invite` with a private `REGISTRATION_CODE` of at least 24 random characters. `NODE_ENV=production` is already set by the Dockerfile.
 6. Deploy. Schema creation runs in a transaction at startup and uses `CREATE TABLE IF NOT EXISTS`. No seed characters, posts, or accounts are created in production.
 7. Verify `/api/health`, register your own account, save your recovery code, and test sharing with a second invited writer.
 
-Rotate `REGISTRATION_CODE` in Railway to stop an old signup code from being used. Existing accounts keep working. Use a dedicated Kin database and start with one app replica. The initial schema setup is additive; future schema changes should be introduced as explicit migrations. Configure backups for the Postgres service before relying on the app for writing you want to keep.
+In invite mode, rotate `REGISTRATION_CODE` in Railway to stop an old signup code from being used. Existing accounts keep working. Use a dedicated Kin database and start with one app replica. The initial schema setup is additive; future schema changes should be introduced as explicit migrations. Configure backups for the Postgres service before relying on the app for writing you want to keep.
 
 ## Privacy and storage
 
@@ -87,7 +88,7 @@ For this small private beta, resized JPEGs are stored as Postgres `bytea` record
 npm test
 ```
 
-The API tests use PGlite, which runs actual PostgreSQL in WASM, without requiring access to a real user's database. They exercise unauthenticated access, cross-origin writes, invite-only sign-up, pending requests, recipient-only approval, author-controlled audiences, authenticated replies, private bookmarks, photo authorization, transaction rollback, removal, single-use recovery, session revocation, logout, and rate limits. They do not replace verification against the deployed Railway database.
+The API tests use PGlite, which runs actual PostgreSQL in WASM, without requiring access to a real user's database. They exercise unauthenticated access, cross-origin writes, open and invite-only signup, pending requests, recipient-only approval, author-controlled audiences, authenticated replies, private bookmarks, photo authorization, transaction rollback, removal, single-use recovery, session revocation, logout, and rate limits. They do not replace verification against the deployed Railway database.
 
 The browser checks in `qa/browser.mjs` use a temporary database and Chrome profile. They were run on Windows for registration, recovery-code acknowledgement, character editing, posting, second-account approval, OOC replies, bookmarks, sign-out/sign-in persistence, private avatar/photo uploads, and desktop/mobile layouts. The Chrome path in that optional helper is Windows-specific.
 

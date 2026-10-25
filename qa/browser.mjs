@@ -8,7 +8,7 @@ import { testDatabase } from '../test/database.mjs';
 
 const db=await testDatabase();
 const origin='http://127.0.0.1:4317',invite='browser-test-invitation-code-keep-local';
-const server=await createApplication({db,origin,registrationCode:invite,production:false,giphyKey:process.env.KIN_TEST_GIPHY_KEY||'',callConfig:{iceServers:[],relayConfigured:false}});
+const server=await createApplication({db,origin,registrationCode:invite,registrationMode:'open',production:false,giphyKey:process.env.KIN_TEST_GIPHY_KEY||'',callConfig:{iceServers:[],relayConfigured:false}});
 await new Promise(resolve=>server.listen(4317,'127.0.0.1',resolve));
 const directory=await mkdtemp(join(tmpdir(),'kin-account-browser-'));
 const chrome=spawn('C:/Program Files/Google/Chrome/Application/chrome.exe',['--headless','--use-fake-ui-for-media-stream','--use-fake-device-for-media-stream','--autoplay-policy=no-user-gesture-required','--disable-gpu','--disable-background-networking','--no-first-run','--no-default-browser-check','--remote-debugging-port=0',`--user-data-dir=${directory}`,'--window-size=1440,1000','about:blank'],{windowsHide:true,stdio:['ignore','ignore','pipe']});
@@ -36,7 +36,7 @@ try{
   await waitFor('Array.from(document.querySelectorAll(".auth-collage img")).length===3&&Array.from(document.querySelectorAll(".auth-collage img")).every(image=>image.complete&&image.naturalWidth>0)');
   await check('Sign-in uses the reference split layout','document.querySelectorAll(".auth-story .collage-card").length===3&&document.getElementById("auth-form-title").textContent==="Log into Kin"');
   await check('Split sign-in fills the browser width','document.querySelector(".auth-layout").getBoundingClientRect().width>=document.documentElement.clientWidth-1');
-  await check('Welcome screen identifies the Gloridara community','document.querySelector(".auth-story h1").textContent.includes("Gloridara")&&document.querySelector(".auth-bottom-note").textContent.includes("Gloridara")');
+  await check('Welcome screen invites roleplayers everywhere','document.querySelector(".auth-story h1").textContent.includes("roleplay")&&document.querySelector(".auth-bottom-note").textContent.includes("roleplay")');
   await check('Empty sign-in form cannot be submitted','document.querySelector("#auth-form [type=submit]").disabled');
   await click('#toggle-auth-password');await check('Password visibility toggle works','document.getElementById("auth-password").type==="text"');await click('#toggle-auth-password');
   const authDesktop=await cdp('Page.captureScreenshot',{format:'png'});await writeFile(new URL('./auth-desktop.png',import.meta.url),Buffer.from(authDesktop.data,'base64'));
@@ -45,7 +45,7 @@ try{
   await check('Mobile sign-in keeps the form and Kin branding','getComputedStyle(document.querySelector(".auth-mobile-brand")).display!=="none"&&getComputedStyle(document.querySelector(".auth-story")).display==="none"');
   const authMobile=await cdp('Page.captureScreenshot',{format:'png'});await writeFile(new URL('./auth-mobile.png',import.meta.url),Buffer.from(authMobile.data,'base64'));
   await cdp('Emulation.clearDeviceMetricsOverride');
-  await click('[data-auth="register"]');await fill('auth-handle','web_writer');await fill('auth-invite',invite);await fill('auth-password','browser test password!');await evaluate('document.getElementById("auth-form").requestSubmit()');
+  await click('[data-auth="register"]');await fill('auth-handle','web_writer');await check('Open signup needs no invite code','!document.getElementById("auth-invite")');await fill('auth-password','browser test password!');await evaluate('document.getElementById("auth-form").requestSubmit()');
   await waitFor('Boolean(document.getElementById("recovery-confirm"))');await check('Registration requires saving recovery code','document.getElementById("recovery-continue").disabled');
   await click('#recovery-confirm');await click('#recovery-continue');await waitFor('!document.body.classList.contains("accounts-locked")');
   await check('Real accounts start without sample data','document.querySelectorAll(".post").length===0&&document.querySelectorAll(".person-bubble").length===1');
@@ -322,7 +322,7 @@ try{
   await click('.mobile-nav [data-view="feed"]');
   await check('Personal profile starts with a separate feed and connections','document.querySelectorAll(".post").length===0&&document.querySelectorAll(".person-bubble").length===1&&document.querySelector(".account-button strong").textContent==="Your name"');
   await click('[data-action="edit-profile"]');await fill('profile-name','Caroline Real');await fill('profile-location','Chicago');await fill('profile-bio','Everyday photos and the people I love.');await evaluate('document.getElementById("profile-form").requestSubmit()');await waitFor('!document.getElementById("modal").open');
-  await check('Personal feed focuses on the Gloridara community','document.getElementById("page-title").textContent.includes("Your community")&&document.querySelector(".brand-caption").textContent.includes("Gloridara")');
+  await check('Personal feed welcomes your community','document.getElementById("page-title").textContent.includes("Your community")&&document.querySelector(".brand-caption").textContent.includes("Your people")');
   await check('Personal name saves without changing the character','document.querySelector(".account-button strong").textContent==="Caroline Real"');
   await click('[data-action="create"]');await fill('post-caption','A little moment from my real life.');await evaluate(upload+';uploadTestImage("photo-input")');await waitFor('!document.getElementById("share-submit").disabled');await fill('photo-description','A personal photo.');await evaluate('document.getElementById("post-form").requestSubmit()');await waitFor('document.querySelectorAll(".post").length===1');
   await check('Personal posts do not show roleplay labels','document.querySelector(".post-audience").textContent==="Personal"');
@@ -344,12 +344,12 @@ try{
   await communityCDP('Network.setCookie',{name:'kin_session',value:bobCookie.slice('kin_session='.length),url:origin,httpOnly:true,sameSite:'Lax'});
   const communityEvaluate=async expression=>{const r=await communityCDP('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true});if(r.exceptionDetails)throw new Error('Community preference check failed');return r.result.value;};
   const communityWait=async expression=>{for(let i=0;i<150;i++){if(await communityEvaluate(expression))return;await new Promise(resolve=>setTimeout(resolve,50));}throw new Error('Timed out checking community preference: '+expression);};
-  await communityCDP('Page.navigate',{url:origin});await communityWait('Boolean(document.getElementById("profile-switch"))&&document.body.classList.contains("profile-personal")');
-  if(!await communityEvaluate('document.querySelector(".brand-caption").textContent.includes("Gloridara")&&document.getElementById("profile-switch").value==="personal"'))throw new Error('Fresh sessions do not open the personal community profile');
-  console.log('PASS: Fresh visitors start with the personal community profile');
-  await communityEvaluate('const select=document.getElementById("profile-switch");select.value="roleplay";select.dispatchEvent(new Event("change",{bubbles:true}))');await communityWait('!document.body.classList.contains("profile-personal")&&!KinAccount.busy');
-  await communityCDP('Page.reload');await communityWait('Boolean(document.getElementById("profile-switch"))&&document.getElementById("profile-switch").value==="roleplay"');
-  console.log('PASS: A chosen roleplay profile remains selected after refresh');
+  await communityCDP('Page.navigate',{url:origin});await communityWait('Boolean(document.getElementById("profile-switch"))&&!document.body.classList.contains("profile-personal")');
+  if(!await communityEvaluate('document.querySelector(".brand-caption").textContent.includes("Stay in character")&&document.getElementById("profile-switch").value==="roleplay"'))throw new Error('Fresh sessions do not open the roleplay profile');
+  console.log('PASS: Fresh visitors start with the roleplay profile');
+  await communityEvaluate('const select=document.getElementById("profile-switch");select.value="personal";select.dispatchEvent(new Event("change",{bubbles:true}))');await communityWait('document.body.classList.contains("profile-personal")&&!KinAccount.busy');
+  await communityCDP('Page.reload');await communityWait('Boolean(document.getElementById("profile-switch"))&&document.getElementById("profile-switch").value==="personal"');
+  console.log('PASS: A chosen personal profile remains selected after refresh');
   await send('Target.disposeBrowserContext',{browserContextId:communityContext.browserContextId});
 
   await cdp('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});

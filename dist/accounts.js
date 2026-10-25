@@ -6,7 +6,7 @@
   try { const selected=sessionStorage.getItem('kin.profile-kind');if(['personal','roleplay'].includes(selected))profileKind=selected; } catch {}
   let characterId=null,primaryCharacterId=null;
   try{if(profileKind==='roleplay')characterId=sessionStorage.getItem('kin.character-id')||null;}catch{}
-  let gate, timer;
+  let gate, timer, inviteOnly=true;
   function adopt(next){characterId=next.characterId||null;primaryCharacterId=next.profiles?.find(p=>p.kind==='roleplay'&&p.primary)?.id||null;}
   function persist(){try{sessionStorage.setItem('kin.profile-kind',profileKind);if(profileKind==='roleplay'&&characterId)sessionStorage.setItem('kin.character-id',characterId);else sessionStorage.removeItem('kin.character-id');}catch{}}
   async function api(path, data) {
@@ -49,23 +49,23 @@
     gate.innerHTML = `<div class="auth-layout">
       <section class="auth-story" aria-labelledby="auth-intro-title">
         <a class="auth-logo" href="/" aria-label="Kin home"><span class="auth-emblem" aria-hidden="true">✳</span><span>kin</span></a>
-        <div class="auth-story-content"><h1 id="auth-intro-title">Made for Gloridara.<br>Your <span>people. Your place.</span></h1>
+        <div class="auth-story-content"><h1 id="auth-intro-title">Love to roleplay?<br>Find <span>your people.</span></h1>
           <div class="auth-collage" aria-hidden="true">
             <div class="collage-card collage-left"><img src="/login-portrait.jpg" alt="" width="420" height="640"><span class="collage-progress"></span><span class="collage-caption">a familiar face</span><span class="collage-reply"></span></div>
             <div class="collage-card collage-right"><img src="/login-story.jpg" alt="" width="420" height="640"><span class="collage-progress"></span><span class="collage-caption">a whole other world</span><span class="collage-reply"></span></div>
             <div class="collage-card collage-center"><img src="/login-friends.jpg" alt="" width="640" height="900"><span class="collage-progress"></span><span class="collage-caption">your kind of people</span><span class="collage-reply"></span><span class="collage-small-heart">♡</span></div>
             <span class="collage-sticker sticker-note">life lately <span>✦</span></span><span class="collage-sticker sticker-star">✦ <span>✓</span></span><span class="collage-heart">♥</span><span class="collage-orbit">✳</span>
           </div>
-          <p class="auth-story-tagline">A community for Gloridara. Real life, shared privately.</p>
+          <p class="auth-story-tagline">Every fandom. Original characters. Writers from everywhere.</p>
         </div>
       </section>
       <section class="auth-form-panel" aria-labelledby="auth-form-title"><div class="auth-form-content">
         <a class="auth-mobile-brand" href="/" aria-label="Kin home">kin<span>✳</span></a>
         <h2 id="auth-form-title">${register ? 'Create your Kin account' : recover ? 'Reset your password' : 'Log into Kin'}</h2>
-        ${register || recover ? `<p class="auth-description">${register ? 'Join Gloridara’s community with the invite code shared by your host. Personal sharing and optional roleplay, under one login.' : 'Enter your username and the recovery code you saved when you joined. You’ll receive a new recovery code after resetting.'}</p>` : ''}
+        ${register || recover ? `<p class="auth-description">${register ? (inviteOnly ? 'Use the invite code shared by your host to join fellow roleplayers. Your characters and personal profile, under one login.' : 'Roleplayers everywhere are welcome. Create an account, bring your characters, and connect with other writers. No invite code needed.') : 'Enter your username and the recovery code you saved when you joined. You’ll receive a new recovery code after resetting.'}</p>` : ''}
         <form id="auth-form" aria-labelledby="auth-form-title">
           <label class="field-label" for="auth-handle">Username</label><input class="field-input" id="auth-handle" name="username" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="Username">
-          ${register ? '<label class="field-label" for="auth-invite">Invite code</label><input class="field-input" id="auth-invite" required maxlength="256" autocomplete="off" placeholder="Invite code">' : ''}
+          ${register && inviteOnly ? '<label class="field-label" for="auth-invite">Invite code</label><input class="field-input" id="auth-invite" required maxlength="256" autocomplete="off" placeholder="Invite code">' : ''}
           ${recover ? '<label class="field-label" for="auth-recovery">Recovery code</label><input class="field-input" id="auth-recovery" required maxlength="128" autocomplete="off" placeholder="Your recovery code">' : ''}
           <label class="field-label" for="auth-password">${recover ? 'New password' : 'Password'}</label><div class="auth-password-field"><input class="field-input" id="auth-password" name="password" type="password" required minlength="12" maxlength="128" autocomplete="${register || recover ? 'new-password' : 'current-password'}" placeholder="${recover ? 'New password (12+ characters)' : register ? 'Password (12+ characters)' : 'Password'}"><button class="auth-password-toggle" id="toggle-auth-password" type="button" aria-label="Show password" aria-pressed="false">Show</button></div>
           ${register || recover ? '<p class="auth-password-help">Use at least 12 characters. Keep your recovery code somewhere safe.</p>' : ''}
@@ -73,9 +73,9 @@
           <button class="button button-primary auth-submit" type="submit" disabled>${register ? 'Create account' : recover ? 'Reset password' : 'Log in'}</button>
         </form>
         ${mode === 'login' ? '<button class="auth-forgot" data-auth="recover">Forgot password?</button>' : '<button class="auth-forgot" data-auth="login">Back to log in</button>'}
-        <div class="auth-bottom"><p class="auth-profile-promise"><span class="promise-personal">◉</span><span>Personal <span class="promise-dot">·</span> Optional roleplay</span><span class="promise-roleplay">✦</span></p><button class="auth-create" data-auth="${mode === 'login' ? 'register' : 'login'}">${mode === 'login' ? 'Create new account' : 'Already have an account? Log in'}</button><div class="auth-bottom-brand">kin<span>✳</span></div><p class="auth-bottom-note">A place for the people of Gloridara.</p></div>
+        <div class="auth-bottom"><p class="auth-profile-promise"><span class="promise-personal">◉</span><span>Roleplay <span class="promise-dot">·</span> Personal profiles</span><span class="promise-roleplay">✦</span></p><button class="auth-create" data-auth="${mode === 'login' ? 'register' : 'login'}">${mode === 'login' ? 'Create new account' : 'Already have an account? Log in'}</button><div class="auth-bottom-brand">kin<span>✳</span></div><p class="auth-bottom-note">A place for everyone who loves to roleplay.</p></div>
       </div></section>
-    </div><footer class="auth-footer"><span>Kin · For the people of Gloridara</span><span>Private circles</span><span>Optional fan roleplay</span><span>© ${new Date().getFullYear()} Kin</span></footer>`;
+    </div><footer class="auth-footer"><span>Kin · Find your roleplay people</span><span>Private circles</span><span>Fan & original characters</span><span>© ${new Date().getFullYear()} Kin</span></footer>`;
     const authForm = document.getElementById('auth-form');
     const authSubmit = authForm.querySelector('[type="submit"]');
     const updateSubmit = () => { authSubmit.disabled = busy || !authForm.checkValidity(); };
@@ -95,7 +95,7 @@
       const error = document.getElementById('auth-error'); error.textContent = '';
       try {
         const data = {handle:document.getElementById('auth-handle').value.trim().toLowerCase(), password:document.getElementById('auth-password').value};
-        if(register)data.inviteCode=document.getElementById('auth-invite').value.trim();
+        if(register && inviteOnly)data.inviteCode=document.getElementById('auth-invite').value.trim();
         if(recover)data.recoveryCode=document.getElementById('auth-recovery').value.trim();
         const result = await api(`/api/auth/${register ? 'register' : recover ? 'recover' : 'login'}`,data);
         form.reset();
@@ -166,6 +166,8 @@
       if(location.protocol==='file:'){toggleApp(true);callbacks.onDemo();return;}
       try {
         const config=await api('/api/config');if(!config.accounts)throw new Error('Accounts are not configured.');
+        inviteOnly=config.inviteOnly!==false;
+        try{if(!['personal','roleplay'].includes(sessionStorage.getItem('kin.profile-kind')))profileKind=config.defaultProfile==='roleplay'?'roleplay':'personal';}catch{profileKind=config.defaultProfile==='roleplay'?'roleplay':'personal';}
         try{await enter();}catch(error){if(error.status===401)authScreen();else throw error;}
         timer=setInterval(()=>{if(document.visibilityState==='visible')refresh().catch(()=>{});},30000);
       }catch(error){clearPrivateView();toggleApp(false);gate.innerHTML=`<div class="auth-card"><h1>Kin is taking a moment.</h1><p class="auth-description">${escape(error.message)}</p><button class="button button-primary" id="account-retry">Try again</button></div>`;document.getElementById('account-retry').onclick=()=>location.reload();}
