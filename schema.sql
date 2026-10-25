@@ -74,4 +74,20 @@ ALTER TABLE kin_media ADD COLUMN IF NOT EXISTS profile_kind text NOT NULL DEFAUL
 CREATE UNIQUE INDEX IF NOT EXISTS kin_connection_profile_pair ON kin_connections(profile_kind,least(requester,recipient),greatest(requester,recipient));
 DROP INDEX IF EXISTS kin_connection_pair;
 CREATE INDEX IF NOT EXISTS kin_posts_profile_created ON kin_posts(profile_kind,created_at DESC);
+CREATE TABLE IF NOT EXISTS kin_chats (
+ id uuid PRIMARY KEY, profile_kind text NOT NULL CHECK(profile_kind IN ('personal','roleplay')),
+ creator uuid NOT NULL REFERENCES kin_users(id), title text NOT NULL DEFAULT '' CHECK(length(title)<=80),
+ is_group boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS kin_chat_members (
+ chat_id uuid NOT NULL REFERENCES kin_chats(id) ON DELETE CASCADE,
+ user_id uuid NOT NULL REFERENCES kin_users(id), PRIMARY KEY(chat_id,user_id)
+);
+CREATE INDEX IF NOT EXISTS kin_chat_members_user ON kin_chat_members(user_id,chat_id);
+CREATE TABLE IF NOT EXISTS kin_messages (
+ seq bigserial PRIMARY KEY, id uuid NOT NULL UNIQUE, chat_id uuid NOT NULL REFERENCES kin_chats(id) ON DELETE CASCADE,
+ sender uuid NOT NULL REFERENCES kin_users(id), body text NOT NULL CHECK(length(body) BETWEEN 1 AND 4000),
+ created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS kin_messages_chat_seq ON kin_messages(chat_id,seq DESC);
 COMMIT;

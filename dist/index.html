@@ -19,6 +19,8 @@
   </style>
   <link rel="stylesheet" href="profiles.css">
   <script src="accounts.js" defer></script>
+  <link rel="stylesheet" href="messages.css">
+  <script src="messages.js" defer></script>
   <script src="app.js" defer></script>
 </head>
 <body class="auth-loading">
@@ -45,6 +47,7 @@
       <nav aria-label="Main navigation">
         <button class="nav-item active" data-view="feed"><svg><use href="#i-home"/></svg><span>Your feed</span></button>
         <button class="nav-item" data-view="people"><svg><use href="#i-people"/></svg><span>Your cast</span><span class="nav-count" id="request-count">2</span></button>
+        <button class="nav-item" data-view="messages"><svg><use href="#i-comment"/></svg><span>Messages</span></button>
         <button class="nav-item" data-view="saved"><svg><use href="#i-bookmark"/></svg><span>Saved posts</span></button>
         <button class="nav-item" data-view="profile"><span class="avatar avatar-xs self-avatar">YC</span><span>Your character</span></button>
       </nav>
@@ -65,7 +68,7 @@
       <p class="right-footer">Fan-made stories. Unofficial portrayals.<br><span>Kin prototype · Not affiliated with featured franchises</span></p>
     </aside>
   </div>
-  <nav class="mobile-nav" aria-label="Mobile navigation"><button class="active" data-view="feed" aria-label="Your feed"><svg><use href="#i-home"/></svg></button><button data-view="people" aria-label="Your cast"><svg><use href="#i-people"/></svg></button><button class="mobile-create" data-action="create" aria-label="Write a roleplay post"><svg><use href="#i-plus"/></svg></button><button data-view="saved" aria-label="Saved posts"><svg><use href="#i-bookmark"/></svg></button><button data-view="profile" aria-label="Your character"><span class="avatar avatar-xs self-avatar">YC</span></button></nav>
+  <nav class="mobile-nav" aria-label="Mobile navigation"><button class="active" data-view="feed" aria-label="Your feed"><svg><use href="#i-home"/></svg></button><button data-view="people" aria-label="Your cast"><svg><use href="#i-people"/></svg></button><button class="mobile-create" data-action="create" aria-label="Write a roleplay post"><svg><use href="#i-plus"/></svg></button><button data-view="messages" aria-label="Messages"><svg><use href="#i-comment"/></svg></button><button data-view="saved" aria-label="Saved posts"><svg><use href="#i-bookmark"/></svg></button><button data-view="profile" aria-label="Your character"><span class="avatar avatar-xs self-avatar">YC</span></button></nav>
   <dialog id="modal" aria-labelledby="modal-title"><div class="modal-heading"><h2 id="modal-title"></h2><button class="icon-button" id="close-modal" aria-label="Close dialog"><svg><use href="#i-close"/></svg></button></div><div id="modal-content"></div></dialog>
   <div class="toast" id="toast" role="status"></div>
 </body>

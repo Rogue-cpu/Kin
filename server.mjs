@@ -1,3 +1,4 @@
+import { chatRoutes } from './messages.mjs';
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, randomUUID, createHash, scrypt, timingSafeEqual } from 'node:crypto';
@@ -207,6 +208,7 @@ export async function createApplication({ db, origin, registrationCode, producti
     try { const data=JSON.parse(Buffer.concat(chunks).toString()); deny(!data || Array.isArray(data) || typeof data!=='object',400,'Invalid request.'); return data; }
     catch(error) { if(error instanceof HttpError)throw error; throw new HttpError(400,'Invalid JSON.'); }
   }
+  const handleChats=chatRoutes({transaction,limited,deny,text,id});
   const server=http.createServer(async (req,res)=>{
     res.setHeader('X-Content-Type-Options','nosniff');
     res.setHeader('Referrer-Policy','no-referrer');
@@ -256,6 +258,7 @@ export async function createApplication({ db, origin, registrationCode, producti
         const user=await session(req);
         if(req.method==='POST' && route==='/api/auth/logout') {await query('DELETE FROM kin_sessions WHERE token_hash=$1',[user.tokenHash]);res.setHeader('Set-Cookie',cookie('',0));send(200,{ok:true});return;}
         const kind=choice(req.headers['x-kin-profile'] || 'roleplay',['roleplay','personal']);
+        if(await handleChats({req,route,url,body,user,kind,send}))return;
         if(req.method==='GET' && route==='/api/state') {send(200,await stateFor(user.id,kind));return;}
         if(req.method==='POST' && route==='/api/actions') {
           deny(!Array.isArray(body.actions) || body.actions.length<1 || body.actions.length>20,400,'Invalid changes.');
@@ -274,7 +277,7 @@ export async function createApplication({ db, origin, registrationCode, producti
         throw new HttpError(404,'Not found.');
       }
       deny(req.method!=='GET' && req.method!=='HEAD',405,'Method not allowed.');
-      const assets={'/':['index.html','text/html'],'/index.html':['index.html','text/html'],'/app.js':['app.js','text/javascript'],'/accounts.js':['accounts.js','text/javascript'],'/accounts.css':['accounts.css','text/css'],'/profiles.css':['profiles.css','text/css'],'/login-friends.jpg':['login-friends.jpg','image/jpeg'],'/login-portrait.jpg':['login-portrait.jpg','image/jpeg'],'/login-story.jpg':['login-story.jpg','image/jpeg'],'/styles.css':['styles.css','text/css']};
+      const assets={'/messages.js':['messages.js','text/javascript'],'/messages.css':['messages.css','text/css'],'/':['index.html','text/html'],'/index.html':['index.html','text/html'],'/app.js':['app.js','text/javascript'],'/accounts.js':['accounts.js','text/javascript'],'/accounts.css':['accounts.css','text/css'],'/profiles.css':['profiles.css','text/css'],'/login-friends.jpg':['login-friends.jpg','image/jpeg'],'/login-portrait.jpg':['login-portrait.jpg','image/jpeg'],'/login-story.jpg':['login-story.jpg','image/jpeg'],'/styles.css':['styles.css','text/css']};
       const asset=assets[route];deny(!asset,404,'Not found.');
       const bytes=await readFile(new URL(`./dist/${asset[0]}`,import.meta.url));
       res.writeHead(200,{'Content-Type':`${asset[1]}; charset=utf-8`});res.end(req.method==='HEAD' ? undefined : bytes);

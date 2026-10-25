@@ -93,15 +93,18 @@ GitHub Actions runs the API suite on Node 24 for pushes and pull requests. Produ
 
 ## Beta scope
 
-Profiles use a dark, mobile-first layout with an avatar, bio, private-connection status, and a three-column post grid. The owner's stats count their currently loaded posts, approved connections, and photo posts; peer profiles show connected status without exposing their connection lists. Circular collections filter actual posts (All posts, Photos, and roleplay-only In character / Writer notes). These are automatic filters, not saved story highlights. Grid tiles open their author's visible feed; the alternative feed tab displays full posts. There are no public follower counts or direct-message buttons.
+Profiles use a dark, mobile-first layout with an avatar, bio, private-connection status, and a three-column post grid. The owner's stats count their currently loaded posts, approved connections, and photo posts; peer profiles show connected status without exposing their connection lists. Circular collections filter actual posts (All posts, Photos, and roleplay-only In character / Writer notes). These are automatic filters, not saved story highlights. Grid tiles open their author's visible feed; the alternative feed tab displays full posts. Approved peers have a Message button. There are no public follower counts.
 
 This version supports one personal profile, one roleplay character, and the latest 200 visible posts per profile. The export includes the active profile's visible state, not an unlimited account archive. Feed updates are checked every 30 seconds while the page is visible, or manually through **Settings & trust → Refresh feed**.
 
-Additional roleplay characters per account, direct messages, email verification/recovery, account deletion controls, media garbage collection, and a staffed moderation/appeals process are not implemented. Roleplay labels and writer boundaries are supported; these do not promise that accounts can never be restricted. Keep your recovery code: there is no email fallback yet.
+Private text messages support direct conversations and named groups of up to 10 members. All pairs of members must be approved connections in the selected profile, including when reading or sending later. Removing a connection hides affected chats and prevents further reads and sends; reconnecting restores access to existing history. Personal and roleplay inboxes, participant names, and messages remain separate. Direct chats are reused, message retries use idempotent IDs, and the server validates membership and profile context for every request. New messages poll every three seconds while the messages screen is visible. History loads 100 messages at a time, with an earlier-messages button, and the inbox lists the 100 most recently active conversations. Chat drafts are kept only in the current view and cleared when leaving it. The writing export does not include chats. Messages are stored on the server; this is not end-to-end encryption.
+
+Message attachments, voice/video calls, read receipts, presence, push notifications, adding/removing members after group creation, and chat deletion are not implemented. Additional roleplay characters per account, email verification/recovery, account deletion controls, media garbage collection, and a staffed moderation/appeals process are also not implemented. Roleplay labels and writer boundaries are supported; these do not promise that accounts can never be restricted. Keep your recovery code: there is no email fallback yet.
 
 ## Files
 
 - `server.mjs`: HTTP server, authentication, authorization, and Postgres operations.
+- `messages.mjs`: profile-scoped conversation membership, text messaging, and history.
 - `schema.sql`: initial dedicated database schema.
 - `dist/`: responsive frontend and account adapter.
 - `test/`: database-backed API and privacy tests.
