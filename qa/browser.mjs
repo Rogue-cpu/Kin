@@ -66,6 +66,7 @@ try{
   await check('Mobile navigation is visible','getComputedStyle(document.querySelector(".mobile-nav")).display!=="none"');
   const mobile=await cdp('Page.captureScreenshot',{format:'png'});await writeFile(new URL('./mobile.png',import.meta.url),Buffer.from(mobile.data,'base64'));
   await click('.mobile-nav [data-view="profile"]');await click('.profile-settings [data-view="settings"]');await click('[data-action="logout"]');await waitFor('Boolean(document.getElementById("auth-form"))');
+  await check('Sign-out removes dark profile styling','!document.body.classList.contains("profile-screen")');
   await check('Sign-out clears private content','document.getElementById("view-content").childElementCount===0&&!document.body.textContent.includes("Caroline AU")');
   await fill('auth-handle','web_writer');await fill('auth-password','browser test password!');await evaluate('document.getElementById("auth-form").requestSubmit()');await waitFor('!document.body.classList.contains("accounts-locked")');await check('Signing back in restores the saved character and post','document.querySelectorAll(".post").length===1&&document.querySelector(".account-button strong").textContent==="Caroline AU"');
   await click('[data-action="edit-profile"]');
@@ -75,6 +76,16 @@ try{
   await click('[data-action="create"]');await fill('post-caption','A photo from our alternate Mystic Falls.');await evaluate(upload+';uploadTestImage("photo-input")');await waitFor('!document.getElementById("share-submit").disabled');await fill('photo-description','A small purple test image.');await evaluate('document.getElementById("post-form").requestSubmit()');await waitFor('document.querySelectorAll(".post").length===2');
   await check('Uploaded photo is stored and rendered privately','document.querySelector(".post-image").getAttribute("src").startsWith("/api/media/")');
   await check('Live data is not saved into browser demo storage','!localStorage.getItem("kin.roleplay.v1")');
+  await click('.mobile-nav [data-view="profile"]');
+  await check('Roleplay profile uses dark reference layout','document.body.classList.contains("profile-screen")&&document.querySelector(".social-profile-top h2").textContent==="web_writer"&&document.querySelectorAll(".social-stats strong")[0].textContent==="2"');
+  await click('[data-collection="photos"]');await check('Photos collection filters out text scenes','document.querySelectorAll(".photo-tile").length===1&&document.querySelectorAll(".photo-tile>img").length===1');
+  await click('[data-collection="ooc"]');await check('Empty writer collection has no unrelated scenes','document.querySelectorAll(".photo-tile").length===0&&document.querySelector(".empty-state").textContent.includes("No posts here yet")');
+  await click('[data-collection="all"]');await click('[data-layout="list"]');await check('Profile feed tab shows both scenes','document.querySelectorAll(".post").length===2');await click('[data-layout="grid"]');
+  await click('.social-actions [data-action="edit-profile"]');await check('Editing works inside the dark profile','document.getElementById("profile-form")!==null');await click('#close-modal');
+  const roleplayMobile=await cdp('Page.captureScreenshot',{format:'png'});await writeFile(new URL('./roleplay-profile-mobile.png',import.meta.url),Buffer.from(roleplayMobile.data,'base64'));
+  await click('.mobile-nav [data-view="people"]');await click('.person-row [data-person]');
+  await check('Approved connection opens the same profile layout','document.body.classList.contains("profile-screen")&&document.querySelector(".approved-stat")!==null&&!document.querySelector(".social-actions [data-action=edit-profile]")');
+  await click('.social-actions [data-action="profile-posts"]');await check('Peer post action shows only their visible posts','document.querySelectorAll(".post").length===0&&!document.body.classList.contains("profile-screen")');
   const switchTo=async kind=>{await fill('profile-switch',kind);await evaluate('document.getElementById("profile-switch").dispatchEvent(new Event("change",{bubbles:true}))');await waitFor('document.body.classList.contains("profile-personal")==='+String(kind==='personal')+'&&!KinAccount.busy');};
   await switchTo('personal');
   await check('Personal profile starts with a separate feed and connections','document.querySelectorAll(".post").length===0&&document.querySelectorAll(".person-bubble").length===1&&document.querySelector(".account-button strong").textContent==="Your name"');

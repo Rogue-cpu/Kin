@@ -93,6 +93,8 @@ GitHub Actions runs the API suite on Node 24 for pushes and pull requests. Produ
 
 ## Beta scope
 
+Profiles use a dark, mobile-first layout with an avatar, bio, private-connection status, and a three-column post grid. The owner's stats count their currently loaded posts, approved connections, and photo posts; peer profiles show connected status without exposing their connection lists. Circular collections filter actual posts (All posts, Photos, and roleplay-only In character / Writer notes). These are automatic filters, not saved story highlights. Grid tiles open their author's visible feed; the alternative feed tab displays full posts. There are no public follower counts or direct-message buttons.
+
 This version supports one personal profile, one roleplay character, and the latest 200 visible posts per profile. The export includes the active profile's visible state, not an unlimited account archive. Feed updates are checked every 30 seconds while the page is visible, or manually through **Settings & trust → Refresh feed**.
 
 Additional roleplay characters per account, direct messages, email verification/recovery, account deletion controls, media garbage collection, and a staffed moderation/appeals process are not implemented. Roleplay labels and writer boundaries are supported; these do not promise that accounts can never be restricted. Keep your recovery code: there is no email fallback yet.
