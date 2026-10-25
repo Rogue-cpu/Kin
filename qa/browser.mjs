@@ -64,6 +64,23 @@ try{
   await click('[data-action="create"]');await fill('post-caption','A photo from our alternate Mystic Falls.');await evaluate(upload+';uploadTestImage("photo-input")');await waitFor('!document.getElementById("share-submit").disabled');await fill('photo-description','A small purple test image.');await evaluate('document.getElementById("post-form").requestSubmit()');await waitFor('document.querySelectorAll(".post").length===2');
   await check('Uploaded photo is stored and rendered privately','document.querySelector(".post-image").getAttribute("src").startsWith("/api/media/")');
   await check('Live data is not saved into browser demo storage','!localStorage.getItem("kin.roleplay.v1")');
+  const switchTo=async kind=>{await fill('profile-switch',kind);await evaluate('document.getElementById("profile-switch").dispatchEvent(new Event("change",{bubbles:true}))');await waitFor('document.body.classList.contains("profile-personal")==='+String(kind==='personal')+'&&!KinAccount.busy');};
+  await switchTo('personal');
+  await check('Personal profile starts with a separate feed and connections','document.querySelectorAll(".post").length===0&&document.querySelectorAll(".person-bubble").length===1&&document.querySelector(".account-button strong").textContent==="Your name"');
+  await click('[data-action="edit-profile"]');await fill('profile-name','Caroline Real');await fill('profile-location','Chicago');await fill('profile-bio','Everyday photos and the people I love.');await evaluate('document.getElementById("profile-form").requestSubmit()');await waitFor('!document.getElementById("modal").open');
+  await check('Personal name saves without changing the character','document.querySelector(".account-button strong").textContent==="Caroline Real"');
+  await click('[data-action="create"]');await fill('post-caption','A little moment from my real life.');await evaluate(upload+';uploadTestImage("photo-input")');await waitFor('!document.getElementById("share-submit").disabled');await fill('photo-description','A personal photo.');await evaluate('document.getElementById("post-form").requestSubmit()');await waitFor('document.querySelectorAll(".post").length===1');
+  await check('Personal posts do not show roleplay labels','document.querySelector(".post-audience").textContent==="Personal"');
+  await click('.mobile-nav [data-view="profile"]');await check('Personal profile has an Instagram-style photo grid','document.querySelectorAll(".photo-grid .photo-tile img").length===1');
+  await check('Photo grid links to the correct post','document.querySelector(".photo-tile").dataset.id.length>0');await click('.photo-tile');await check('Opening a grid photo returns to its post','document.querySelectorAll(".post").length===1&&document.querySelector(".post-caption").textContent.includes("real life")');
+  await switchTo('roleplay');await check('Switching back preserves the original character and roleplay posts','document.querySelectorAll(".post").length===2&&document.querySelector(".account-button strong").textContent==="Caroline AU"&&!document.getElementById("view-content").textContent.includes("A little moment from my real life")');
+  await switchTo('personal');await cdp('Page.reload');await waitFor('document.body.classList.contains("profile-personal")&&Boolean(document.querySelector(".post"))');
+  await check('Active profile and personal posts survive a refresh','document.querySelectorAll(".post").length===1&&document.querySelector(".account-button strong").textContent==="Caroline Real"');
+  await click('.mobile-nav [data-view="profile"]');await check('Mobile personal profile fits the screen','document.documentElement.scrollWidth<=window.innerWidth');
+  const personalMobile=await cdp('Page.captureScreenshot',{format:'png'});await writeFile(new URL('./personal-mobile.png',import.meta.url),Buffer.from(personalMobile.data,'base64'));
+  await cdp('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
+  await check('Desktop personal profile fits the screen','document.documentElement.scrollWidth<=window.innerWidth');
+  const personalDesktop=await cdp('Page.captureScreenshot',{format:'png'});await writeFile(new URL('./personal-desktop.png',import.meta.url),Buffer.from(personalDesktop.data,'base64'));
   await check('No uncaught browser errors','window.qaErrors.length===0');
   console.log('Browser account checks completed.');
 }finally{

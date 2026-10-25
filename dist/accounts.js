@@ -2,12 +2,14 @@
 (() => {
   const escape = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   let callbacks, active = false, generation = 0, refreshing = false, busy = false;
+  let profileKind = 'roleplay';
+  try { if (sessionStorage.getItem('kin.profile-kind') === 'personal') profileKind = 'personal'; } catch {}
   let gate, timer;
   async function api(path, data) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 20000);
     try {
-      const response = await fetch(path, { method: data === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store', headers: data === undefined ? {} : {'Content-Type':'application/json'}, body: data === undefined ? undefined : JSON.stringify(data), signal: controller.signal });
+      const response = await fetch(path, { method: data === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store', headers: {'X-Kin-Profile':profileKind,...(data === undefined ? {} : {'Content-Type':'application/json'})}, body: data === undefined ? undefined : JSON.stringify(data), signal: controller.signal });
       const result = await response.json();
       if (!response.ok) { const error = new Error(result.error || 'Kin could not complete that request.'); error.status = response.status; throw error; }
       return result;
@@ -30,6 +32,10 @@
     document.getElementById('modal-content').replaceChildren();
     document.getElementById('view-content').replaceChildren();
     document.getElementById('sidebar-people').replaceChildren();
+    document.getElementById('profile-mode-bar')?.remove();
+    document.body.classList.remove('profile-personal');
+    document.querySelector('.prototype-notice').textContent = 'Your private Kin account';
+    document.querySelector('.account-button small').textContent = 'Personal and roleplay profiles';
     document.querySelector('.account-button strong').textContent = 'Your character';
     document.querySelectorAll('.self-avatar').forEach(avatar => { const blank = document.createElement('span'); blank.className = avatar.className; blank.textContent = 'YC'; avatar.replaceWith(blank); });
   }
@@ -61,6 +67,7 @@
       const link=document.createElement('a');link.href=url;link.download='kin-recovery-code.txt';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
     };
     document.getElementById('recovery-confirm').onchange=event=>{document.getElementById('recovery-continue').disabled=!event.target.checked;};
+    document.getElementById('recovery-continue').textContent='Open Kin';
     document.getElementById('recovery-continue').onclick=async()=>{if(busy)return;busy=true;try{await enter();}catch(error){document.getElementById('recovery-error').textContent=error.message;}finally{busy=false;}};
   }
   async function enter() {
@@ -98,6 +105,19 @@
   }
   window.KinAccount={
     get active(){return active;},
+    get busy(){return busy;},
+    async switchProfile(kind){
+      if (!['roleplay','personal'].includes(kind)) throw new Error('Choose a personal or roleplay profile.');
+      if (kind === profileKind) return;
+      if (!active || busy || callbacks.isBusy() || document.getElementById('modal').open) throw new Error('Finish or close your current post before switching profiles.');
+      const previous = profileKind; busy = true; generation += 1; profileKind = kind;
+      try {
+        const next = await api('/api/state');
+        callbacks.onState(next);
+        try { sessionStorage.setItem('kin.profile-kind', kind); } catch {}
+      } catch(error) { profileKind = previous; throw error; }
+      finally { busy = false; }
+    },
     async boot(hooks){
       callbacks=hooks;gate=document.getElementById('account-gate');
       if(location.protocol==='file:'){toggleApp(true);callbacks.onDemo();return;}
@@ -107,7 +127,7 @@
         timer=setInterval(()=>{if(document.visibilityState==='visible')refresh().catch(()=>{});},30000);
       }catch(error){clearPrivateView();toggleApp(false);gate.innerHTML=`<div class="auth-card"><h1>Kin is taking a moment.</h1><p class="auth-description">${escape(error.message)}</p><button class="button button-primary" id="account-retry">Try again</button></div>`;document.getElementById('account-retry').onclick=()=>location.reload();}
     },
-    async save(before,after){generation+=1;return api('/api/actions',{actions:diff(before,after)});},
+    async save(before,after){if(before.profileKind!==profileKind||after.profileKind!==profileKind)throw new Error('This draft belongs to a different profile. Refresh before saving.');generation+=1;return api('/api/actions',{actions:diff(before,after)});},
     async act(type,data){generation+=1;const next=await api('/api/actions',{actions:[{type,data}]});callbacks.onRefresh(next);return next;},
     refresh,
     async logout(){if(busy||callbacks.isBusy())return;busy=true;try{await api('/api/auth/logout',{});authScreen();}finally{busy=false;}},

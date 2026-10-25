@@ -29,7 +29,6 @@ CREATE TABLE IF NOT EXISTS kin_connections (
   created_at timestamptz NOT NULL DEFAULT now(),
   CHECK (requester <> recipient)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS kin_connection_pair ON kin_connections(least(requester,recipient),greatest(requester,recipient));
 CREATE TABLE IF NOT EXISTS kin_media (
   id uuid PRIMARY KEY,
   owner uuid NOT NULL REFERENCES kin_users(id) ON DELETE CASCADE,
@@ -67,4 +66,12 @@ CREATE TABLE IF NOT EXISTS kin_bookmarks (
   post_id text NOT NULL REFERENCES kin_posts(id) ON DELETE CASCADE,
   PRIMARY KEY(user_id,post_id)
 );
+-- Existing accounts, posts, media and connections remain roleplay records.
+ALTER TABLE kin_users ADD COLUMN IF NOT EXISTS personal jsonb NOT NULL DEFAULT '{"name":"Your name","bio":"","fandom":"Personal","role":"Personal profile","pronouns":"","location":"","backstory":"","boundaries":"","portrait":""}'::jsonb;
+ALTER TABLE kin_connections ADD COLUMN IF NOT EXISTS profile_kind text NOT NULL DEFAULT 'roleplay' CHECK (profile_kind IN ('roleplay','personal'));
+ALTER TABLE kin_posts ADD COLUMN IF NOT EXISTS profile_kind text NOT NULL DEFAULT 'roleplay' CHECK (profile_kind IN ('roleplay','personal'));
+ALTER TABLE kin_media ADD COLUMN IF NOT EXISTS profile_kind text NOT NULL DEFAULT 'roleplay' CHECK (profile_kind IN ('roleplay','personal'));
+CREATE UNIQUE INDEX IF NOT EXISTS kin_connection_profile_pair ON kin_connections(profile_kind,least(requester,recipient),greatest(requester,recipient));
+DROP INDEX IF EXISTS kin_connection_pair;
+CREATE INDEX IF NOT EXISTS kin_posts_profile_created ON kin_posts(profile_kind,created_at DESC);
 COMMIT;

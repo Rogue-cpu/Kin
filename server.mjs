@@ -41,11 +41,12 @@ async function passwordMatches(password, encoded) {
 function passwordInput(value) { deny(typeof value !== 'string' || value.length < 12 || value.length > 128, 400, 'Use a password between 12 and 128 characters.'); return value; }
 
 // p.author and p.audience refer only to the fixed SQL alias, never client SQL.
-const CAN_READ = `(p.author=$1 OR EXISTS (
-  SELECT 1 FROM kin_connections c WHERE c.status='accepted'
+const CAN_READ = `(p.profile_kind=$2 AND (p.author=$1 OR EXISTS (
+  SELECT 1 FROM kin_connections c WHERE c.status='accepted' AND c.profile_kind=p.profile_kind
   AND ((c.requester=p.author AND c.recipient=$1 AND (p.audience='all' OR p.audience=c.requester_circle))
     OR (c.recipient=p.author AND c.requester=$1 AND (p.audience='all' OR p.audience=c.recipient_circle)))
-))`;
+)))`;
+const CAN_READ_MEDIA = CAN_READ.replace('p.profile_kind=$2', 'p.profile_kind=m.profile_kind');
 
 export function resolveAppOrigin(rawOrigin, railwayDomain) {
   const configured = typeof rawOrigin === 'string' ? rawOrigin.trim() : '';
@@ -95,24 +96,26 @@ export async function createApplication({ db, origin, registrationCode, producti
     const character = row.status === 'pending' ? { ...row.character, portrait: '' } : row.character;
     return { ...character, id: row.id === viewer ? 'self' : row.id, handle: row.handle, initials: character.name.split(/\s+/).slice(0,2).map(part => part[0]).join('').toUpperCase(), group: row.circle || 'cast', label: character.fandom };
   }
-  async function stateFor(userId) {
+  async function stateFor(userId, kind = 'roleplay') {
     // A transaction keeps profile, membership, and the feed in one database snapshot.
     return transaction(async client => {
       await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
-      const own = (await client.query('SELECT id,handle,character FROM kin_users WHERE id=$1', [userId])).rows[0];
+      const own = (await client.query('SELECT id,handle,character,personal FROM kin_users WHERE id=$1', [userId])).rows[0];
       deny(!own, 401, 'Sign in to continue.');
       const connections = (await client.query(`SELECT c.id connection_id,c.requester,c.recipient,c.status,
         CASE WHEN c.requester=$1 THEN c.requester_circle ELSE c.recipient_circle END circle,
-        u.id,u.handle,u.character FROM kin_connections c JOIN kin_users u ON u.id=CASE WHEN c.requester=$1 THEN c.recipient ELSE c.requester END
-        WHERE c.requester=$1 OR c.recipient=$1 ORDER BY c.created_at`, [userId])).rows;
-      const rows = (await client.query(`SELECT p.*,u.character->>'name' author_name,
+        u.id,u.handle,CASE WHEN $2='personal' THEN u.personal ELSE u.character END AS "character" FROM kin_connections c JOIN kin_users u ON u.id=CASE WHEN c.requester=$1 THEN c.recipient ELSE c.requester END
+        WHERE c.profile_kind=$2 AND (c.requester=$1 OR c.recipient=$1) ORDER BY c.created_at`, [userId, kind])).rows;
+      const rows = (await client.query(`SELECT p.*,
         (SELECT count(*)::int FROM kin_likes l WHERE l.post_id=p.id AND l.user_id<>$1) likes,
         EXISTS(SELECT 1 FROM kin_likes l WHERE l.post_id=p.id AND l.user_id=$1) liked,
         EXISTS(SELECT 1 FROM kin_bookmarks b WHERE b.post_id=p.id AND b.user_id=$1) saved
-        FROM kin_posts p JOIN kin_users u ON u.id=p.author WHERE ${CAN_READ} ORDER BY p.created_at DESC LIMIT 200`, [userId])).rows;
-      const replies = rows.length ? (await client.query(`SELECT r.*,u.character->>'name' name FROM kin_replies r JOIN kin_users u ON u.id=r.author WHERE r.post_id=ANY($1::text[]) ORDER BY r.created_at,r.id`, [rows.map(row => row.id)])).rows : [];
+        FROM kin_posts p WHERE ${CAN_READ} ORDER BY p.created_at DESC LIMIT 200`, [userId, kind])).rows;
+      const replies = rows.length ? (await client.query(`SELECT r.*,CASE WHEN $2='personal' THEN u.personal->>'name' ELSE u.character->>'name' END name FROM kin_replies r JOIN kin_users u ON u.id=r.author WHERE r.post_id=ANY($1::text[]) ORDER BY r.created_at,r.id`, [rows.map(row => row.id), kind])).rows : [];
       return {
-        version: 1, live: true, profile: { ...own.character, handle: own.handle },
+        version: 1, live: true, profileKind: kind,
+        profile: { ...(kind === 'personal' ? own.personal : own.character), handle: own.handle },
+        profiles: [{kind:'personal',name:own.personal.name,portrait:own.personal.portrait},{kind:'roleplay',name:own.character.name,portrait:own.character.portrait}],
         people: connections.filter(row => row.status === 'accepted').map(row => characterView(row, userId)),
         requests: connections.filter(row => row.status === 'pending' && row.recipient === userId).map(row => characterView(row, userId)),
         outgoing: connections.filter(row => row.status === 'pending' && row.requester === userId).map(row => ({ id: row.id, name: row.character.name, handle: row.handle })), invitations: [],
@@ -120,75 +123,77 @@ export async function createApplication({ db, origin, registrationCode, producti
       };
     });
   }
-  async function canReadPost(client, viewer, value) {
-    const result = await client.query(`SELECT p.* FROM kin_posts p WHERE p.id=$2 AND ${CAN_READ}`, [viewer, postId(value)]);
+  async function canReadPost(client, viewer, value, kind) {
+    const result = await client.query(`SELECT p.* FROM kin_posts p WHERE p.id=$3 AND ${CAN_READ}`, [viewer, kind, postId(value)]);
     deny(!result.rows[0], 404, 'That post is unavailable.');
     return result.rows[0];
   }
-  async function saveImage(client, owner, value) {
+  async function saveImage(client, owner, value, kind) {
     if (!value) return null;
     const existing = /^\/api\/media\/([a-f0-9-]{36})$/.exec(value);
     if (existing) {
-      deny(!(await client.query('SELECT id FROM kin_media WHERE id=$1 AND owner=$2', [existing[1], owner])).rows.length, 403, 'That photo belongs to another account.');
+      deny(!(await client.query('SELECT id FROM kin_media WHERE id=$1 AND owner=$2 AND profile_kind=$3', [existing[1], owner, kind])).rows.length, 403, 'That photo belongs to another profile.');
       return existing[1];
     }
     deny(typeof value !== 'string' || value.length > 2800000 || !/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(value), 400, 'Use a JPEG photo smaller than 2 MB.');
     const bytes = Buffer.from(value.slice(value.indexOf(',') + 1), 'base64');
     deny(bytes.length > 2097152 || bytes.length < 4 || bytes[0] !== 255 || bytes[1] !== 216 || bytes[2] !== 255, 400, 'Invalid JPEG photo.');
     const mediaId = randomUUID();
-    await client.query('INSERT INTO kin_media(id,owner,bytes) VALUES($1,$2,$3)', [mediaId, owner, bytes]);
+    await client.query('INSERT INTO kin_media(id,owner,bytes,profile_kind) VALUES($1,$2,$3,$4)', [mediaId, owner, bytes, kind]);
     return mediaId;
   }
-  async function applyAction(client, userId, action) {
+  async function applyAction(client, userId, action, kind) {
     deny(!action || typeof action !== 'object', 400, 'Invalid action.');
     const data = action.data || {};
     switch (action.type) {
       case 'profile': {
-        const portraitId = await saveImage(client, userId, data.portrait);
-        const character = { name: text(data.name,60,true), bio: text(data.bio,300), fandom: choice(data.fandom,FANDOMS), role: text(data.role,100), pronouns: text(data.pronouns,40), backstory: text(data.backstory,3000), boundaries: text(data.boundaries,1000), portrait: portraitId ? `/api/media/${portraitId}` : '' };
-        await client.query('UPDATE kin_users SET character=$2::jsonb WHERE id=$1', [userId, JSON.stringify(character)]); break;
+        const portraitId = await saveImage(client, userId, data.portrait, kind);
+        const personal = kind === 'personal';
+        const character = { name: text(data.name,60,true), bio: text(data.bio,300), fandom: personal ? 'Personal' : choice(data.fandom,FANDOMS), role: personal ? 'Personal profile' : text(data.role,100), pronouns: text(data.pronouns,40), location: text(data.location || '',100), backstory: personal ? '' : text(data.backstory,3000), boundaries: personal ? '' : text(data.boundaries,1000), portrait: portraitId ? `/api/media/${portraitId}` : '' };
+        const column = personal ? 'personal' : 'character';
+        await client.query(`UPDATE kin_users SET ${column}=$2::jsonb WHERE id=$1`, [userId, JSON.stringify(character)]); break;
       }
       case 'post': {
-        const imageId = await saveImage(client,userId,data.image);
+        const imageId = await saveImage(client,userId,data.image,kind);
         const caption=text(data.caption,5000,true), alt=text(data.alt || '',250);
         deny(imageId && !alt,400,'Add a photo description.');
-        await client.query('INSERT INTO kin_posts(id,author,caption,mode,audience,image_id,alt) VALUES($1,$2,$3,$4,$5,$6,$7)',[postId(data.id),userId,caption,choice(data.mode,['ic','ooc']),choice(data.audience,['all','cast','partners']),imageId,alt]); break;
+        await client.query('INSERT INTO kin_posts(id,author,caption,mode,audience,image_id,alt,profile_kind) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',[postId(data.id),userId,caption,kind === 'personal' ? 'ic' : choice(data.mode,['ic','ooc']),choice(data.audience,['all','cast','partners']),imageId,alt,kind]); break;
       }
       case 'delete-post': {
-        const removed = await client.query('DELETE FROM kin_posts WHERE id=$1 AND author=$2 RETURNING id',[postId(data.id),userId]);
+        const removed = await client.query('DELETE FROM kin_posts WHERE id=$1 AND author=$2 AND profile_kind=$3 RETURNING id',[postId(data.id),userId,kind]);
         deny(!removed.rows.length,404,'That post is unavailable.'); break;
       }
       case 'like': case 'bookmark': {
-        await canReadPost(client,userId,data.id);
+        await canReadPost(client,userId,data.id,kind);
         deny(typeof data.value !== 'boolean',400,'Invalid toggle.');
         const table=action.type==='like' ? 'kin_likes' : 'kin_bookmarks';
         if (data.value) await client.query(`INSERT INTO ${table}(user_id,post_id) VALUES($1,$2) ON CONFLICT DO NOTHING`,[userId,data.id]);
         else await client.query(`DELETE FROM ${table} WHERE user_id=$1 AND post_id=$2`,[userId,data.id]); break;
       }
       case 'reply': {
-        await canReadPost(client,userId,data.id);
+        await canReadPost(client,userId,data.id,kind);
         await client.query('INSERT INTO kin_replies(id,post_id,author,body,mode) VALUES($1,$2,$3,$4,$5)',[randomUUID(),data.id,userId,text(data.text,2000,true),choice(data.mode,['ic','ooc'])]); break;
       }
       case 'request': {
         const handle=text(data.handle,24,true).toLowerCase().replace(/^@/,'');
         const target=(await client.query('SELECT id FROM kin_users WHERE handle=$1',[handle])).rows[0];
         deny(!target || target.id===userId,404,'No available account with that handle.');
-        const existing=await client.query('SELECT id FROM kin_connections WHERE (requester=$1 AND recipient=$2) OR (requester=$2 AND recipient=$1)',[userId,target.id]);
+        const existing=await client.query('SELECT id FROM kin_connections WHERE profile_kind=$3 AND ((requester=$1 AND recipient=$2) OR (requester=$2 AND recipient=$1))',[userId,target.id,kind]);
         deny(existing.rows.length,409,'A connection or request already exists.');
-        await client.query('INSERT INTO kin_connections(id,requester,recipient) VALUES($1,$2,$3)',[randomUUID(),userId,target.id]); break;
+        await client.query('INSERT INTO kin_connections(id,requester,recipient,profile_kind) VALUES($1,$2,$3,$4)',[randomUUID(),userId,target.id,kind]); break;
       }
       case 'accept': {
-        const result=await client.query("UPDATE kin_connections SET status='accepted' WHERE requester=$1 AND recipient=$2 AND status='pending' RETURNING id",[id(data.id),userId]);
+        const result=await client.query("UPDATE kin_connections SET status='accepted' WHERE requester=$1 AND recipient=$2 AND status='pending' AND profile_kind=$3 RETURNING id",[id(data.id),userId,kind]);
         deny(!result.rows.length,404,'That request is unavailable.'); break;
       }
       case 'decline': {
-        await client.query("DELETE FROM kin_connections WHERE requester=$1 AND recipient=$2 AND status='pending'",[id(data.id),userId]); break;
+        await client.query("DELETE FROM kin_connections WHERE requester=$1 AND recipient=$2 AND status='pending' AND profile_kind=$3",[id(data.id),userId,kind]); break;
       }
       case 'remove': {
-        await client.query('DELETE FROM kin_connections WHERE (requester=$1 AND recipient=$2) OR (requester=$2 AND recipient=$1)',[userId,id(data.id)]); break;
+        await client.query('DELETE FROM kin_connections WHERE profile_kind=$3 AND ((requester=$1 AND recipient=$2) OR (requester=$2 AND recipient=$1))',[userId,id(data.id),kind]); break;
       }
       case 'circle': {
-        const result=await client.query(`UPDATE kin_connections SET requester_circle=CASE WHEN requester=$1 THEN $3 ELSE requester_circle END,recipient_circle=CASE WHEN recipient=$1 THEN $3 ELSE recipient_circle END WHERE status='accepted' AND ((requester=$1 AND recipient=$2) OR (requester=$2 AND recipient=$1)) RETURNING id`,[userId,id(data.id),choice(data.group,['cast','partners'])]);
+        const result=await client.query(`UPDATE kin_connections SET requester_circle=CASE WHEN requester=$1 THEN $3 ELSE requester_circle END,recipient_circle=CASE WHEN recipient=$1 THEN $3 ELSE recipient_circle END WHERE status='accepted' AND profile_kind=$4 AND ((requester=$1 AND recipient=$2) OR (requester=$2 AND recipient=$1)) RETURNING id`,[userId,id(data.id),choice(data.group,['cast','partners']),kind]);
         deny(!result.rows.length,404,'That connection is unavailable.'); break;
       }
       default: throw new HttpError(400,'Unsupported action.');
@@ -250,25 +255,26 @@ export async function createApplication({ db, origin, registrationCode, producti
       if(route.startsWith('/api/')) {
         const user=await session(req);
         if(req.method==='POST' && route==='/api/auth/logout') {await query('DELETE FROM kin_sessions WHERE token_hash=$1',[user.tokenHash]);res.setHeader('Set-Cookie',cookie('',0));send(200,{ok:true});return;}
-        if(req.method==='GET' && route==='/api/state') {send(200,await stateFor(user.id));return;}
+        const kind=choice(req.headers['x-kin-profile'] || 'roleplay',['roleplay','personal']);
+        if(req.method==='GET' && route==='/api/state') {send(200,await stateFor(user.id,kind));return;}
         if(req.method==='POST' && route==='/api/actions') {
           deny(!Array.isArray(body.actions) || body.actions.length<1 || body.actions.length>20,400,'Invalid changes.');
           await limited(`writes:${user.id}`,180,60);
           if(body.actions.some(action=>action?.type==='request'))await limited(`requests:${user.id}`,20,3600);
-          await transaction(async client=>{for(const action of body.actions)await applyAction(client,user.id,action);});
-          send(200,await stateFor(user.id));return;
+          await transaction(async client=>{for(const action of body.actions)await applyAction(client,user.id,action,kind);});
+          send(200,await stateFor(user.id,kind));return;
         }
         if(req.method==='GET' && route.startsWith('/api/media/')) {
           const mediaId=id(route.slice('/api/media/'.length));
           const found=await query(`SELECT m.bytes FROM kin_media m WHERE m.id=$2 AND (m.owner=$1
-            OR EXISTS(SELECT 1 FROM kin_posts p WHERE p.image_id=m.id AND ${CAN_READ})
-            OR EXISTS(SELECT 1 FROM kin_users u JOIN kin_connections c ON ((c.requester=u.id AND c.recipient=$1) OR (c.recipient=u.id AND c.requester=$1)) WHERE c.status='accepted' AND u.character->>'portrait'=('/api/media/'||m.id::text)))`,[user.id,mediaId]);
+            OR EXISTS(SELECT 1 FROM kin_posts p WHERE p.image_id=m.id AND ${CAN_READ_MEDIA})
+            OR EXISTS(SELECT 1 FROM kin_users u JOIN kin_connections c ON ((c.requester=u.id AND c.recipient=$1) OR (c.recipient=u.id AND c.requester=$1)) WHERE c.status='accepted' AND c.profile_kind=m.profile_kind AND (CASE WHEN m.profile_kind='personal' THEN u.personal ELSE u.character END)->>'portrait'=('/api/media/'||m.id::text)))`,[user.id,mediaId]);
           deny(!found.rows[0],404,'That photo is unavailable.');res.writeHead(200,{'Content-Type':'image/jpeg'});res.end(Buffer.from(found.rows[0].bytes));return;
         }
         throw new HttpError(404,'Not found.');
       }
       deny(req.method!=='GET' && req.method!=='HEAD',405,'Method not allowed.');
-      const assets={'/':['index.html','text/html'],'/index.html':['index.html','text/html'],'/app.js':['app.js','text/javascript'],'/accounts.js':['accounts.js','text/javascript'],'/accounts.css':['accounts.css','text/css'],'/styles.css':['styles.css','text/css']};
+      const assets={'/':['index.html','text/html'],'/index.html':['index.html','text/html'],'/app.js':['app.js','text/javascript'],'/accounts.js':['accounts.js','text/javascript'],'/accounts.css':['accounts.css','text/css'],'/profiles.css':['profiles.css','text/css'],'/styles.css':['styles.css','text/css']};
       const asset=assets[route];deny(!asset,404,'Not found.');
       const bytes=await readFile(new URL(`./dist/${asset[0]}`,import.meta.url));
       res.writeHead(200,{'Content-Type':`${asset[1]}; charset=utf-8`});res.end(req.method==='HEAD' ? undefined : bytes);

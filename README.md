@@ -1,14 +1,20 @@
 # Kin
 
-A private, character-based roleplay app for WWE, The Vampire Diaries, Supernatural, Twilight, and original characters. People write scenes, character updates, and out-of-character plot notes with approved connections.
+A private photo-sharing and roleplay app. One login gives you a personal profile for real-life photos and updates, plus a roleplay profile for WWE, The Vampire Diaries, Supernatural, Twilight, and original characters.
+
+Live app: [Open Kin](https://kin-production-155f.up.railway.app).
+
+Use the profile selector at the top of the app to switch between **Personal** and **Roleplay**. Each profile has its own name, avatar, bio, posts, saved posts, and approved connections. Profiles include an Instagram-style photo grid, a feed layout, and links from grid tiles to individual posts. The upgrade preserves existing characters, roleplay posts, connections, photos, and sign-ins.
+
+Personal and roleplay connections are approved separately. Roleplay access does not grant access to personal posts or avatars. The account handle is shared between both profiles, so these are separate sharing spaces rather than unlinkable identities. Active profile choice is stored per browser tab.
 
 ## What works
 
 - Invite-only writer accounts with password sign-in and HttpOnly session cookies.
 - Single-use recovery codes for forgotten passwords. Recovery revokes previous sessions and issues a replacement code.
-- One editable character per writer: name, fandom, role, pronouns, avatar, bio, backstory, and writer boundaries.
+- A personal profile with a name, bio, photo, pronouns, and optional location, plus a roleplay profile with a character name, fandom, role, backstory, and writer boundaries.
 - Connection requests by exact writer handle. Recipients approve requests before either side can read posts.
-- Story cast and Writing partners audiences assigned by the post author.
+- Author-controlled audiences: Close friends and Family for personal posts, Story cast and Writing partners for roleplay posts.
 - IC/OOC posts and replies, optional photos, likes, private bookmarks, fandom filters, and chronological feeds.
 - PostgreSQL-backed records and private photos. Every photo request checks the current viewer's permissions.
 - Sign-out, a visible-writing JSON export, and a responsive desktop/mobile interface.
@@ -63,7 +69,9 @@ Rotate `REGISTRATION_CODE` in Railway to stop an old signup code from being used
 
 Writer passwords are salted and hashed with Node's scrypt. Session tokens and recovery codes are stored only as hashes. Password hashing has a concurrency cap, and authentication and write attempts have database-backed limits. Write requests require the configured Origin. The frontend never receives database credentials or session tokens, and live account data is not saved to demo localStorage.
 
-The server uses parameterized queries and chooses account identity from the authenticated session. It checks approved relationships and author-defined audience membership when reading posts, replying, liking, bookmarking, or fetching photos. Removing a connection revokes future access. Copies someone already downloaded cannot be withdrawn.
+The server uses parameterized queries and chooses account identity from the authenticated session. It checks approved relationships, profile context, and author-defined audience membership when reading posts, replying, liking, bookmarking, or fetching photos. Removing a connection revokes future access. Copies someone already downloaded cannot be withdrawn.
+
+The `X-Kin-Profile` header selects `personal` or `roleplay` for state and action requests. Omitting it preserves roleplay behavior. Media permissions use each stored photo's profile context. Existing records migrate to `roleplay`, and the personal profile starts empty. The migration is rerunnable after the same two accounts connect in both profiles. Do not downgrade to a server version predating profile isolation after personal records have been created; old servers do not understand the new privacy boundary.
 
 For this small private beta, resized JPEGs are stored as Postgres `bytea` records, limited to 2 MB each. Files are served only from authenticated API endpoints with `Cache-Control: no-store`. Photos are not put in the public frontend directory. Deleted or replaced image records may remain unreferenced in the database; object storage and media garbage collection are future work.
 
@@ -81,9 +89,9 @@ GitHub Actions runs the API suite on Node 24 for pushes and pull requests. Produ
 
 ## Beta scope
 
-This version supports one character per account and the latest 200 visible posts. The export includes that visible state, not an unlimited account archive. Feed updates are checked every 30 seconds while the page is visible, or manually through **Settings & trust → Refresh feed**.
+This version supports one personal profile, one roleplay character, and the latest 200 visible posts per profile. The export includes the active profile's visible state, not an unlimited account archive. Feed updates are checked every 30 seconds while the page is visible, or manually through **Settings & trust → Refresh feed**.
 
-Multiple characters per account, direct messages, email verification/recovery, account deletion controls, media garbage collection, and a staffed moderation/appeals process are not implemented. Roleplay labels and writer boundaries are supported; these do not promise that accounts can never be restricted. Keep your recovery code: there is no email fallback yet.
+Additional roleplay characters per account, direct messages, email verification/recovery, account deletion controls, media garbage collection, and a staffed moderation/appeals process are not implemented. Roleplay labels and writer boundaries are supported; these do not promise that accounts can never be restricted. Keep your recovery code: there is no email fallback yet.
 
 ## Files
 
