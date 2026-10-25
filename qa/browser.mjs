@@ -23,7 +23,7 @@ try{
   const {sessionId}=await send('Target.attachToTarget',{targetId:target.targetId,flatten:true});
   const cdp=(method,params)=>send(method,params,sessionId);
   await cdp('Page.enable');await cdp('Runtime.enable');
-  const mediaInstrumentation='window.qaStreams=[];window.qaPeers=[];const NativePC=window.RTCPeerConnection;window.RTCPeerConnection=class extends NativePC{constructor(config){super(config);window.qaPeers.push(this)}};const originalGetMedia=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);navigator.mediaDevices.getUserMedia=async function(config){const stream=await originalGetMedia(config);window.qaStreams.push(stream);return stream;};';
+  const mediaInstrumentation='if(!sessionStorage.getItem("kin.profile-kind"))sessionStorage.setItem("kin.profile-kind","roleplay");window.qaStreams=[];window.qaPeers=[];const NativePC=window.RTCPeerConnection;window.RTCPeerConnection=class extends NativePC{constructor(config){super(config);window.qaPeers.push(this)}};const originalGetMedia=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);navigator.mediaDevices.getUserMedia=async function(config){const stream=await originalGetMedia(config);window.qaStreams.push(stream);return stream;};';
   await cdp('Page.addScriptToEvaluateOnNewDocument',{source:mediaInstrumentation});
   await cdp('Page.addScriptToEvaluateOnNewDocument',{source:'window.qaErrors=[];window.addEventListener("error",e=>{if(e.message)window.qaErrors.push(e.message)});window.addEventListener("unhandledrejection",e=>window.qaErrors.push(String(e.reason)));'});
   const evaluate=async expression=>{const response=await cdp('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true});if(response.exceptionDetails)throw new Error(response.exceptionDetails.text+' '+JSON.stringify(response.exceptionDetails.exception));return response.result.value;};
@@ -36,6 +36,7 @@ try{
   await waitFor('Array.from(document.querySelectorAll(".auth-collage img")).length===3&&Array.from(document.querySelectorAll(".auth-collage img")).every(image=>image.complete&&image.naturalWidth>0)');
   await check('Sign-in uses the reference split layout','document.querySelectorAll(".auth-story .collage-card").length===3&&document.getElementById("auth-form-title").textContent==="Log into Kin"');
   await check('Split sign-in fills the browser width','document.querySelector(".auth-layout").getBoundingClientRect().width>=document.documentElement.clientWidth-1');
+  await check('Welcome screen identifies the Gloridara community','document.querySelector(".auth-story h1").textContent.includes("Gloridara")&&document.querySelector(".auth-bottom-note").textContent.includes("Gloridara")');
   await check('Empty sign-in form cannot be submitted','document.querySelector("#auth-form [type=submit]").disabled');
   await click('#toggle-auth-password');await check('Password visibility toggle works','document.getElementById("auth-password").type==="text"');await click('#toggle-auth-password');
   const authDesktop=await cdp('Page.captureScreenshot',{format:'png'});await writeFile(new URL('./auth-desktop.png',import.meta.url),Buffer.from(authDesktop.data,'base64'));
@@ -321,6 +322,7 @@ try{
   await click('.mobile-nav [data-view="feed"]');
   await check('Personal profile starts with a separate feed and connections','document.querySelectorAll(".post").length===0&&document.querySelectorAll(".person-bubble").length===1&&document.querySelector(".account-button strong").textContent==="Your name"');
   await click('[data-action="edit-profile"]');await fill('profile-name','Caroline Real');await fill('profile-location','Chicago');await fill('profile-bio','Everyday photos and the people I love.');await evaluate('document.getElementById("profile-form").requestSubmit()');await waitFor('!document.getElementById("modal").open');
+  await check('Personal feed focuses on the Gloridara community','document.getElementById("page-title").textContent.includes("Your community")&&document.querySelector(".brand-caption").textContent.includes("Gloridara")');
   await check('Personal name saves without changing the character','document.querySelector(".account-button strong").textContent==="Caroline Real"');
   await click('[data-action="create"]');await fill('post-caption','A little moment from my real life.');await evaluate(upload+';uploadTestImage("photo-input")');await waitFor('!document.getElementById("share-submit").disabled');await fill('photo-description','A personal photo.');await evaluate('document.getElementById("post-form").requestSubmit()');await waitFor('document.querySelectorAll(".post").length===1');
   await check('Personal posts do not show roleplay labels','document.querySelector(".post-audience").textContent==="Personal"');
@@ -334,6 +336,22 @@ try{
   await cdp('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
   await check('Desktop personal profile fits the screen','document.documentElement.scrollWidth<=window.innerWidth');
   const personalDesktop=await cdp('Page.captureScreenshot',{format:'png'});await writeFile(new URL('./personal-desktop.png',import.meta.url),Buffer.from(personalDesktop.data,'base64'));
+  const communityContext=await send('Target.createBrowserContext');
+  const communityTarget=await send('Target.createTarget',{url:'about:blank',browserContextId:communityContext.browserContextId});
+  const communitySession=(await send('Target.attachToTarget',{targetId:communityTarget.targetId,flatten:true})).sessionId;
+  const communityCDP=(method,params)=>send(method,params,communitySession);
+  await communityCDP('Page.enable');await communityCDP('Runtime.enable');
+  await communityCDP('Network.setCookie',{name:'kin_session',value:bobCookie.slice('kin_session='.length),url:origin,httpOnly:true,sameSite:'Lax'});
+  const communityEvaluate=async expression=>{const r=await communityCDP('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true});if(r.exceptionDetails)throw new Error('Community preference check failed');return r.result.value;};
+  const communityWait=async expression=>{for(let i=0;i<150;i++){if(await communityEvaluate(expression))return;await new Promise(resolve=>setTimeout(resolve,50));}throw new Error('Timed out checking community preference: '+expression);};
+  await communityCDP('Page.navigate',{url:origin});await communityWait('Boolean(document.getElementById("profile-switch"))&&document.body.classList.contains("profile-personal")');
+  if(!await communityEvaluate('document.querySelector(".brand-caption").textContent.includes("Gloridara")&&document.getElementById("profile-switch").value==="personal"'))throw new Error('Fresh sessions do not open the personal community profile');
+  console.log('PASS: Fresh visitors start with the personal community profile');
+  await communityEvaluate('const select=document.getElementById("profile-switch");select.value="roleplay";select.dispatchEvent(new Event("change",{bubbles:true}))');await communityWait('!document.body.classList.contains("profile-personal")&&!KinAccount.busy');
+  await communityCDP('Page.reload');await communityWait('Boolean(document.getElementById("profile-switch"))&&document.getElementById("profile-switch").value==="roleplay"');
+  console.log('PASS: A chosen roleplay profile remains selected after refresh');
+  await send('Target.disposeBrowserContext',{browserContextId:communityContext.browserContextId});
+
   await check('No uncaught browser errors','window.qaErrors.length===0');
   console.log('Browser account checks completed.');
 }finally{

@@ -2,8 +2,8 @@
 (() => {
   const escape = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   let callbacks, active = false, generation = 0, refreshing = false, busy = false;
-  let profileKind = 'roleplay';
-  try { if (sessionStorage.getItem('kin.profile-kind') === 'personal') profileKind = 'personal'; } catch {}
+  let profileKind = 'personal';
+  try { const selected=sessionStorage.getItem('kin.profile-kind');if(['personal','roleplay'].includes(selected))profileKind=selected; } catch {}
   let gate, timer;
   async function api(path, data) {
     const controller = new AbortController();
@@ -45,20 +45,20 @@
     gate.innerHTML = `<div class="auth-layout">
       <section class="auth-story" aria-labelledby="auth-intro-title">
         <a class="auth-logo" href="/" aria-label="Kin home"><span class="auth-emblem" aria-hidden="true">✳</span><span>kin</span></a>
-        <div class="auth-story-content"><h1 id="auth-intro-title">Your everyday moments.<br>Your <span>extraordinary stories.</span></h1>
+        <div class="auth-story-content"><h1 id="auth-intro-title">Made for Gloridara.<br>Your <span>people. Your place.</span></h1>
           <div class="auth-collage" aria-hidden="true">
             <div class="collage-card collage-left"><img src="/login-portrait.jpg" alt="" width="420" height="640"><span class="collage-progress"></span><span class="collage-caption">a familiar face</span><span class="collage-reply"></span></div>
             <div class="collage-card collage-right"><img src="/login-story.jpg" alt="" width="420" height="640"><span class="collage-progress"></span><span class="collage-caption">a whole other world</span><span class="collage-reply"></span></div>
             <div class="collage-card collage-center"><img src="/login-friends.jpg" alt="" width="640" height="900"><span class="collage-progress"></span><span class="collage-caption">your kind of people</span><span class="collage-reply"></span><span class="collage-small-heart">♡</span></div>
             <span class="collage-sticker sticker-note">life lately <span>✦</span></span><span class="collage-sticker sticker-star">✦ <span>✓</span></span><span class="collage-heart">♥</span><span class="collage-orbit">✳</span>
           </div>
-          <p class="auth-story-tagline">Real life. Roleplay. A place for both.</p>
+          <p class="auth-story-tagline">A community for Gloridara. Real life, shared privately.</p>
         </div>
       </section>
       <section class="auth-form-panel" aria-labelledby="auth-form-title"><div class="auth-form-content">
         <a class="auth-mobile-brand" href="/" aria-label="Kin home">kin<span>✳</span></a>
         <h2 id="auth-form-title">${register ? 'Create your Kin account' : recover ? 'Reset your password' : 'Log into Kin'}</h2>
-        ${register || recover ? `<p class="auth-description">${register ? 'One account for your real life and your roleplay worlds. Join with the invite code shared by your host.' : 'Enter your username and the recovery code you saved when you joined. You’ll receive a new recovery code after resetting.'}</p>` : ''}
+        ${register || recover ? `<p class="auth-description">${register ? 'Join Gloridara’s community with the invite code shared by your host. Personal sharing and optional roleplay, under one login.' : 'Enter your username and the recovery code you saved when you joined. You’ll receive a new recovery code after resetting.'}</p>` : ''}
         <form id="auth-form" aria-labelledby="auth-form-title">
           <label class="field-label" for="auth-handle">Username</label><input class="field-input" id="auth-handle" name="username" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="Username">
           ${register ? '<label class="field-label" for="auth-invite">Invite code</label><input class="field-input" id="auth-invite" required maxlength="256" autocomplete="off" placeholder="Invite code">' : ''}
@@ -69,9 +69,9 @@
           <button class="button button-primary auth-submit" type="submit" disabled>${register ? 'Create account' : recover ? 'Reset password' : 'Log in'}</button>
         </form>
         ${mode === 'login' ? '<button class="auth-forgot" data-auth="recover">Forgot password?</button>' : '<button class="auth-forgot" data-auth="login">Back to log in</button>'}
-        <div class="auth-bottom"><p class="auth-profile-promise"><span class="promise-personal">◉</span><span>Personal <span class="promise-dot">·</span> Roleplay</span><span class="promise-roleplay">✦</span></p><button class="auth-create" data-auth="${mode === 'login' ? 'register' : 'login'}">${mode === 'login' ? 'Create new account' : 'Already have an account? Log in'}</button><div class="auth-bottom-brand">kin<span>✳</span></div><p class="auth-bottom-note">One login. Two sides of you.</p></div>
+        <div class="auth-bottom"><p class="auth-profile-promise"><span class="promise-personal">◉</span><span>Personal <span class="promise-dot">·</span> Optional roleplay</span><span class="promise-roleplay">✦</span></p><button class="auth-create" data-auth="${mode === 'login' ? 'register' : 'login'}">${mode === 'login' ? 'Create new account' : 'Already have an account? Log in'}</button><div class="auth-bottom-brand">kin<span>✳</span></div><p class="auth-bottom-note">A place for the people of Gloridara.</p></div>
       </div></section>
-    </div><footer class="auth-footer"><span>Your life. Your characters. Your people.</span><span>Private circles</span><span>Unofficial fan roleplay</span><span>© ${new Date().getFullYear()} Kin</span></footer>`;
+    </div><footer class="auth-footer"><span>Kin · For the people of Gloridara</span><span>Private circles</span><span>Optional fan roleplay</span><span>© ${new Date().getFullYear()} Kin</span></footer>`;
     const authForm = document.getElementById('auth-form');
     const authSubmit = authForm.querySelector('[type="submit"]');
     const updateSubmit = () => { authSubmit.disabled = busy || !authForm.checkValidity(); };

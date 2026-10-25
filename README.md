@@ -1,6 +1,6 @@
 # Kin
 
-A private photo-sharing and roleplay app. One login gives you a personal profile for real-life photos and updates, plus a roleplay profile for WWE, The Vampire Diaries, Supernatural, Twilight, and original characters.
+A community social media app for the people of Gloridara, with private photo sharing, updates, and messaging. One login gives you a personal profile plus an optional roleplay profile for WWE, The Vampire Diaries, Supernatural, Twilight, and original characters. The app's name remains Kin. The welcome page and personal feed identify the Gloridara community; a fresh browser session starts in the personal profile, and an explicitly selected personal or roleplay profile remains selected on refresh. Accounts, connections, and existing content retain their separate profile contexts.
 
 Live app: [Open Kin](https://kin-production-155f.up.railway.app).
 
