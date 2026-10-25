@@ -125,7 +125,7 @@
       if(!old){actions.push({type:'post',data:post});continue;}
       if(old.liked!==post.liked)actions.push({type:'like',data:{id:post.id,value:post.liked}});
       if(old.saved!==post.saved)actions.push({type:'bookmark',data:{id:post.id,value:post.saved}});
-      for(const comment of post.comments.slice(old.comments.length))actions.push({type:'reply',data:{id:post.id,text:comment.text,mode:comment.mode}});
+      for(const comment of post.comments.slice(old.comments.length))actions.push({type:'reply',data:{id:post.id,text:comment.text,mode:comment.mode,parentReplyId:comment.parentReplyId||null}});
     }
     for(const old of before.posts)if(old.author==='self'&&!newPosts.has(old.id))actions.push({type:'delete-post',data:{id:old.id}});
     for(const request of before.requests)if(!after.requests.some(next=>next.id===request.id))actions.push({type:after.people.some(next=>next.id===request.id)?'accept':'decline',data:{id:request.id}});

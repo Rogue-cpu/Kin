@@ -69,26 +69,29 @@ export function chatRoutes({ transaction, limited, deny, text, id, iceConfig }) 
     }
     const chat=id(route.split('/')[3]);
     if(req.method==='GET') {
-      const raw=url.searchParams.get('before');deny(raw!==null&&!/^[1-9][0-9]{0,17}$/.test(raw),400,'Invalid message cursor.');
+      const around=url.searchParams.has('around')?id(url.searchParams.get('around')):null;
+      const raw=url.searchParams.get('before');deny(around&&raw!==null,400,'Choose one history cursor.');deny(raw!==null&&!/^[1-9][0-9]{0,17}$/.test(raw),400,'Invalid message cursor.');
       const result=await transaction(async client=>{
         const conversation=await authorize(client,user.id,kind,chat);
-        const rows=(await client.query(`SELECT m.seq::text,m.id,m.sender,m.body,m.created_at,CASE WHEN a.id IS NULL THEN NULL ELSE json_build_object('url','/api/chat-media/'||a.id::text,'mime',a.mime,'duration',a.duration) END AS attachment FROM kin_messages m LEFT JOIN kin_chat_assets a ON a.id=m.attachment_id WHERE m.chat_id=$1 AND ($2::bigint IS NULL OR m.seq<$2::bigint) ORDER BY m.seq DESC LIMIT 101`,[chat,raw])).rows;
+        if(around)deny(!(await client.query('SELECT id FROM kin_messages WHERE id=$1 AND chat_id=$2',[around,chat])).rows.length,404,'Original message unavailable.');
+        const rows=(await client.query(`SELECT m.seq::text,m.id,m.sender,m.body,m.created_at,CASE WHEN original.id IS NULL THEN NULL ELSE json_build_object('id',original.id,'sender',original.sender,'body',left(original.body,180),'attachmentType',original_asset.mime) END AS "replyTo",CASE WHEN a.id IS NULL THEN NULL ELSE json_build_object('url','/api/chat-media/'||a.id::text,'mime',a.mime,'duration',a.duration) END AS attachment FROM kin_messages m LEFT JOIN kin_chat_assets a ON a.id=m.attachment_id LEFT JOIN kin_messages original ON original.id=m.reply_to AND original.chat_id=m.chat_id LEFT JOIN kin_chat_assets original_asset ON original_asset.id=original.attachment_id WHERE m.chat_id=$1 AND ($3::uuid IS NULL OR m.seq<=(SELECT seq FROM kin_messages WHERE id=$3 AND chat_id=$1)) AND ($2::bigint IS NULL OR m.seq<$2::bigint) ORDER BY m.seq DESC LIMIT 101`,[chat,raw,around])).rows;
         const more=rows.length>100;const messages=rows.slice(0,100).reverse().map(r=>({...r,self:r.sender===user.id}));
-        return {id:chat,title:conversation.title,isGroup:conversation.is_group,members:await participants(client,chat,kind,user.id),messages,hasMore:more};
+        return {id:chat,title:conversation.title,isGroup:conversation.is_group,members:await participants(client,chat,kind,user.id),messages,hasMore:more,anchored:!!around};
       });send(200,result);return true;
     }
     if(req.method==='POST') {
       await limited(`chat-send:${user.id}`,60,60);
-      const content=text(body.text||'',4000), messageId=id(body.id);
+      const content=text(body.text||'',4000), messageId=id(body.id), replyToId=body.replyToId==null?null:id(body.replyToId);
       const attachment=body.attachment?decodeAttachment(body.attachment,deny):null;
       deny(!content&&!attachment,400,'Write a message or choose an attachment.');
       await transaction(async client=>{
         await authorize(client,user.id,kind,chat);
-        const previous=(await client.query('SELECT m.sender,m.chat_id,m.body,a.fingerprint FROM kin_messages m LEFT JOIN kin_chat_assets a ON a.id=m.attachment_id WHERE m.id=$1',[messageId])).rows[0];
-        if(previous){deny(previous.sender!==user.id||previous.chat_id!==chat||previous.body!==content||(previous.fingerprint||null)!==(attachment?.fingerprint||null),409,'That message identifier is already used.');return;}
+        const previous=(await client.query('SELECT m.sender,m.chat_id,m.body,m.reply_to,a.fingerprint FROM kin_messages m LEFT JOIN kin_chat_assets a ON a.id=m.attachment_id WHERE m.id=$1',[messageId])).rows[0];
+        if(previous){deny(previous.sender!==user.id||previous.chat_id!==chat||previous.body!==content||(previous.reply_to||null)!==replyToId||(previous.fingerprint||null)!==(attachment?.fingerprint||null),409,'That message identifier is already used.');return;}
+        if(replyToId)deny(!(await client.query('SELECT id FROM kin_messages WHERE id=$1 AND chat_id=$2',[replyToId,chat])).rows.length,404,'Original message unavailable in this conversation.');
         let assetId=null;
         if(attachment){assetId=randomUUID();await client.query('INSERT INTO kin_chat_assets(id,chat_id,owner,mime,bytes,fingerprint,duration) VALUES($1,$2,$3,$4,$5,$6,$7)',[assetId,chat,user.id,attachment.mime,attachment.bytes,attachment.fingerprint,attachment.duration]);}
-        await client.query('INSERT INTO kin_messages(id,chat_id,sender,body,attachment_id) VALUES($1,$2,$3,$4,$5)',[messageId,chat,user.id,content,assetId]);
+        await client.query('INSERT INTO kin_messages(id,chat_id,sender,body,attachment_id,reply_to) VALUES($1,$2,$3,$4,$5,$6)',[messageId,chat,user.id,content,assetId,replyToId]);
       });send(201,{ok:true});return true;
     }
     deny(true,405,'Method not supported.');

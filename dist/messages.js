@@ -5,7 +5,7 @@
   let root=null,context=null,kind='',epoch=0,timer=null,active=null,thread=null,chats=[],busy=false,loading=false,requestVersion=0;
   const pending=new Set();
   let attachment=null,attachmentKey='',recorder=null,recordStream=null,recordTimer=null,recordStart=0;
-  let mediaGeneration=0;
+  let mediaGeneration=0,selectedReply=null;
   const portrait=member=>/^\/api\/media\/[a-f0-9-]{36}$/.test(member.portrait||'')?`<img src="${esc(member.portrait)}" alt="">`:`<span>${esc(member.name.trim().split(/\s+/).slice(0,2).map(p=>p[0]).join('').toUpperCase())}</span>`;
   const title=chat=>chat.title||chat.members.filter(m=>!m.self).map(m=>m.name).join(', ')||'Conversation';
   const avatar=chat=>`<span class="chat-avatar">${chat.is_group||chat.isGroup?icon('people'):portrait(chat.members.find(m=>!m.self)||chat.members[0])}</span>`;
@@ -25,7 +25,7 @@
     }finally{clearTimeout(timeout);pending.delete(controller);}
   }
   function error(message){const el=root?.querySelector('.chat-error');if(el)el.textContent=message;}
-  function close(){clearMedia();epoch++;requestVersion++;clearInterval(timer);timer=null;for(const controller of pending)controller.abort();pending.clear();root=null;context=null;thread=null;chats=[];active=null;kind='';busy=false;loading=false;}
+  function close(){selectedReply=null;clearMedia();epoch++;requestVersion++;clearInterval(timer);timer=null;for(const controller of pending)controller.abort();pending.clear();root=null;context=null;thread=null;chats=[];active=null;kind='';busy=false;loading=false;}
   function paintInbox(){
     const list=root.querySelector('.chat-list');
     list.innerHTML=chats.length?chats.map(c=>`<button class="chat-list-item ${active===c.id?'selected':''}" data-chat="${c.id}">${avatar(c)}<span><strong>${esc(title(c))}</strong><small>${esc(c.preview||'Start the conversation')}</small></span>${icon('arrow')}</button>`).join(''):'<div class="chat-empty"><h3>Your conversations start here</h3><p>Choose an approved connection to say hello or start a scene.</p><button class="button" data-chat-new>New message</button></div>';
@@ -33,7 +33,7 @@
   async function refresh(){
     if(loading||busy||!root||document.hidden)return;loading=true;const revision=epoch;
     try {const data=await api('/api/chats');chats=data.chats;paintInbox();if(active)await loadThread(false);}
-    catch(e){if(e.name!=='AbortError'){if(e.status===404||e.status===403){active=null;thread=null;root.querySelector('.chat-pane').innerHTML='<div class="chat-empty"><p>This conversation is no longer available.</p></div>';root.classList.remove('thread-open');}error(e.message||'Connection interrupted. Try again.');}}
+    catch(e){if(e.name!=='AbortError'){if(e.status===404||e.status===403){clearMedia();selectedReply=null;active=null;thread=null;root.querySelector('.chat-pane').innerHTML='<div class="chat-empty"><p>This conversation is no longer available.</p></div>';root.classList.remove('thread-open');}error(e.message||'Connection interrupted. Try again.');}}
     finally{if(revision===epoch)loading=false;}
   }
   function render(container,state){
@@ -49,9 +49,13 @@
         else if(button.hasAttribute('data-chat-record'))await recordVoice();
         else if(button.hasAttribute('data-record-stop')){if(recorder?.state==='recording')recorder.stop();}
         else if(button.hasAttribute('data-media-remove')){clearMedia();paintAttachment();}
-        else if(button.hasAttribute('data-chat-new')){clearMedia();newChat();}
-        else if(button.dataset.chat){clearMedia();active=button.dataset.chat;thread=null;requestVersion++;root.classList.add('thread-open');root.querySelector('.chat-pane').innerHTML='<p class="chat-loading">Opening conversation…</p>';paintInbox();await loadThread(true);}
-        else if(button.hasAttribute('data-chat-back')){clearMedia();active=null;thread=null;requestVersion++;root.classList.remove('thread-open');root.querySelector('.chat-pane').innerHTML='<div class="chat-empty"><h2>Your messages</h2><p>Choose a conversation or start a new message.</p><button class="button button-primary" data-chat-new>New message</button></div>';paintInbox();}
+        else if(button.dataset.messageReply){selectedReply=thread?.messages.find(m=>m.id===button.dataset.messageReply)||null;paintReply();root.querySelector('#chat-text')?.focus();}
+        else if(button.hasAttribute('data-reply-cancel')){selectedReply=null;paintReply();}
+        else if(button.dataset.replyJump){await jumpToMessage(button.dataset.replyJump);}
+        else if(button.hasAttribute('data-chat-latest')){if(recorder)throw new Error('Finish your recording first.');requestVersion++;await loadThread(true);}
+        else if(button.hasAttribute('data-chat-new')){selectedReply=null;clearMedia();newChat();}
+        else if(button.dataset.chat){selectedReply=null;clearMedia();active=button.dataset.chat;thread=null;requestVersion++;root.classList.add('thread-open');root.querySelector('.chat-pane').innerHTML='<p class="chat-loading">Opening conversation…</p>';paintInbox();await loadThread(true);}
+        else if(button.hasAttribute('data-chat-back')){selectedReply=null;clearMedia();active=null;thread=null;requestVersion++;root.classList.remove('thread-open');root.querySelector('.chat-pane').innerHTML='<div class="chat-empty"><h2>Your messages</h2><p>Choose a conversation or start a new message.</p><button class="button button-primary" data-chat-new>New message</button></div>';paintInbox();}
         else if(button.hasAttribute('data-chat-older'))await older();
         else if(button.hasAttribute('data-chat-retry'))await refresh();
       }catch(e){if(e.name!=='AbortError'){if(e.status===404||e.status===403){thread=null;active=null;root.querySelector('.chat-pane').innerHTML='<div class="chat-empty"><p>Conversation unavailable.</p></div>';root.classList.remove('thread-open');}error(e.message);}}
@@ -62,6 +66,7 @@
     refresh();timer=setInterval(refresh,3000);
   }
   function newChat(){
+    selectedReply=null;
     active=null;thread=null;requestVersion++;root.classList.add('thread-open');error('');
     const people=context.people;
     root.querySelector('.chat-pane').innerHTML=`<header class="chat-header"><button class="icon-button" data-chat-back aria-label="Back to inbox">${icon('arrow')}</button><h2>New message</h2></header><form id="chat-create"><p>Choose up to 9 people. Everyone must be approved connections with each other in this ${kind==='personal'?'personal':'roleplay'} profile.</p><label class="field-label" for="chat-title">Group name (optional)</label><input class="field-input" id="chat-title" maxlength="80" placeholder="Your group story"><fieldset><legend>Send to</legend>${people.length?people.map(p=>`<label class="chat-recipient"><input type="checkbox" name="member" value="${p.id}"><span class="chat-avatar">${portrait(p)}</span><span><strong>${esc(p.name)}</strong><small>@${esc(p.handle)}</small></span></label>`).join(''):'<p>Approve a connection in Your people before starting a chat.</p>'}</fieldset><button class="button button-primary" type="submit" ${people.length?'':'disabled'}>Start conversation</button></form>`;
@@ -76,18 +81,21 @@
   }
   function messageHTML(message,members){
     const sender=members.find(m=>m.id===message.sender)||{name:'Member',portrait:''};
-    return `<div class="chat-message ${message.self?'outgoing':'incoming'}" data-message="${message.id}">${message.self?'':`<span class="message-avatar">${portrait(sender)}</span>`}<div>${message.self?'':`<span class="message-author">${esc(sender.name)}</span>`}${message.attachment?attachmentHTML(message.attachment):''}${message.body?`<p class="message-bubble">${esc(message.body)}</p>`:''}<time datetime="${esc(message.created_at)}">${esc(new Date(message.created_at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}))}</time></div></div>`;
+    return `<div class="chat-message ${message.self?'outgoing':'incoming'}" data-message="${message.id}">${message.self?'':`<span class="message-avatar">${portrait(sender)}</span>`}<div>${message.self?'':`<span class="message-author">${esc(sender.name)}</span>`}${message.replyTo?quoteHTML(message.replyTo,members):''}${message.attachment?attachmentHTML(message.attachment):''}${message.body?`<p class="message-bubble">${esc(message.body)}</p>`:''}<div class="message-meta"><time datetime="${esc(message.created_at)}">${esc(new Date(message.created_at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}))}</time><button type="button" class="message-reply-button" data-message-reply="${message.id}" aria-label="Reply to ${esc(message.self?'your message':sender.name)}">Reply</button></div></div></div>`;
   }
   function messageList(data){
     let date='';return data.messages.map(m=>{const next=new Date(m.created_at).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'}),stamp=next===date?'':`<div class="chat-date">${esc(next)}</div>`;date=next;return stamp+messageHTML(m,data.members);}).join('');
   }
-  async function loadThread(initial){
+  async function loadThread(initial,around=null){
+    if(!initial&&thread?.anchored){await api(`/api/chats/${active}/messages?around=${thread.messages.at(-1).id}`);return;}
     const chat=active,version=requestVersion;if(!chat)return;
-    const data=await api(`/api/chats/${chat}/messages`);if(chat!==active||version!==requestVersion)return;
+    const data=await api(`/api/chats/${chat}/messages${around?'?around='+encodeURIComponent(around):''}`);if(chat!==active||version!==requestVersion)return;
     const pane=root.querySelector('.chat-pane');
     if(!thread||initial){
+      const oldField=pane.querySelector('#chat-text'),draft=oldField?.value||'',retryId=oldField?.dataset.messageId,retryContent=oldField?.dataset.content;
       thread=data;
-      pane.innerHTML=`<header class="chat-header"><button class="icon-button" data-chat-back aria-label="Back to inbox">${icon('arrow')}</button>${avatar(data)}<div><h2>${esc(title(data))}</h2><p>${data.isGroup?data.members.length+' members':'Private conversation'} · ${kind==='personal'?'Personal':'Roleplay'}</p></div><div class="chat-call-actions"><button class="icon-button" data-start-call="audio" aria-label="Start voice call">${icon('phone')}</button><button class="icon-button" data-start-call="video" aria-label="Start video call">${icon('video')}</button></div></header><div class="chat-history" role="log" aria-label="Messages" aria-live="polite"><div class="chat-older">${data.hasMore?'<button data-chat-older>Load earlier messages</button>':''}</div><p class="chat-start">${data.isGroup?'A private group for '+data.members.map(m=>esc(m.name)).join(', '):'Your conversation with '+esc(data.members.find(m=>!m.self)?.name||'your connection')}<br><span>Only members can read this chat.</span></p><div class="chat-message-list">${messageList(data)}</div></div><form id="chat-compose"><label class="sr-only" for="chat-text">Message</label><div class="chat-attachment-preview" aria-live="polite"></div><input id="chat-photo" type="file" accept="image/jpeg,image/png,image/webp" hidden><div class="message-composer"><button type="button" class="composer-tool" data-chat-photo aria-label="Attach photo">${icon('image')}</button><textarea id="chat-text" required maxlength="4000" rows="1" placeholder="${kind==='personal'?'Message…':'Write a message or start a scene…'}"></textarea><button type="button" class="composer-tool" data-chat-record aria-label="Record voice message">${icon('mic')}</button><button type="submit" aria-label="Send message">${icon('arrow')}</button></div><small>Enter to send · Shift + Enter for a new line</small></form>`;
+      pane.innerHTML=`<header class="chat-header"><button class="icon-button" data-chat-back aria-label="Back to inbox">${icon('arrow')}</button>${avatar(data)}<div><h2>${esc(title(data))}</h2><p>${data.isGroup?data.members.length+' members':'Private conversation'} · ${kind==='personal'?'Personal':'Roleplay'}</p></div><div class="chat-call-actions"><button class="icon-button" data-start-call="audio" aria-label="Start voice call">${icon('phone')}</button><button class="icon-button" data-start-call="video" aria-label="Start video call">${icon('video')}</button></div></header><div class="chat-history" role="log" aria-label="Messages" aria-live="polite"><div class="chat-older">${data.anchored?'<button data-chat-latest>Return to latest messages</button>':''}${data.hasMore?'<button data-chat-older>Load earlier messages</button>':''}</div><p class="chat-start">${data.isGroup?'A private group for '+data.members.map(m=>esc(m.name)).join(', '):'Your conversation with '+esc(data.members.find(m=>!m.self)?.name||'your connection')}<br><span>Only members can read this chat.</span></p><div class="chat-message-list">${messageList(data)}</div></div><form id="chat-compose"><label class="sr-only" for="chat-text">Message</label><div class="chat-reply-preview" aria-live="polite"></div><div class="chat-attachment-preview" aria-live="polite"></div><input id="chat-photo" type="file" accept="image/jpeg,image/png,image/webp" hidden><div class="message-composer"><button type="button" class="composer-tool" data-chat-photo aria-label="Attach photo">${icon('image')}</button><textarea id="chat-text" required maxlength="4000" rows="1" placeholder="${kind==='personal'?'Message…':'Write a message or start a scene…'}"></textarea><button type="button" class="composer-tool" data-chat-record aria-label="Record voice message">${icon('mic')}</button><button type="submit" aria-label="Send message">${icon('arrow')}</button></div><small>Enter to send · Shift + Enter for a new line</small></form>`;
+      const newField=pane.querySelector('#chat-text');newField.value=draft;if(retryId){newField.dataset.messageId=retryId;newField.dataset.content=retryContent;}paintReply();paintAttachment();
       const history=pane.querySelector('.chat-history');history.scrollTop=history.scrollHeight;
     }else{
       const history=pane.querySelector('.chat-history');if(!history)return;
@@ -103,19 +111,36 @@
     try{const data=await api(`/api/chats/${chat}/messages?before=${thread.messages[0].seq}`);if(active!==chat||version!==requestVersion)return;
       const history=root.querySelector('.chat-history'),height=history.scrollHeight;
       thread.messages=[...data.messages,...thread.messages];thread.hasMore=data.hasMore;
-      root.querySelector('.chat-message-list').innerHTML=messageList(thread);root.querySelector('.chat-older').innerHTML=data.hasMore?'<button data-chat-older>Load earlier messages</button>':'';history.scrollTop+=history.scrollHeight-height;
+      root.querySelector('.chat-message-list').innerHTML=messageList(thread);root.querySelector('.chat-older').innerHTML=(thread.anchored?'<button data-chat-latest>Return to latest messages</button>':'')+(data.hasMore?'<button data-chat-older>Load earlier messages</button>':'');history.scrollTop+=history.scrollHeight-height;
     }catch(e){if(e.name!=='AbortError')error(e.message);}finally{if(revision===epoch)busy=false;}
   }
   async function send(form){
     const field=form.querySelector('textarea'),content=field.value.trim();if((!content&&!attachment)||busy||recorder||!active)return;
     busy=true;const revision=epoch,chat=active;const button=form.querySelector('[type=submit]');button.disabled=true;error('');
-    const media=attachment,mediaKey=attachmentKey;
+    const media=attachment,mediaKey=attachmentKey,reply=selectedReply,draftKey=JSON.stringify([content,attachmentKey,selectedReply?.id||null]);
     // Keep an id on the draft so a retry after a lost response cannot duplicate it.
-    if(field.dataset.content!==content+mediaKey){field.dataset.messageId=crypto.randomUUID();field.dataset.content=content+mediaKey;}
-    try{await api(`/api/chats/${chat}/messages`,{id:field.dataset.messageId,text:content,attachment:media});if(attachmentKey===mediaKey){clearMedia();paintAttachment();}if(field.value.trim()===content){field.value='';delete field.dataset.messageId;delete field.dataset.content;}await loadThread(false);field.focus();}
+    if(field.dataset.content!==draftKey){field.dataset.messageId=crypto.randomUUID();field.dataset.content=draftKey;}
+    try{await api(`/api/chats/${chat}/messages`,{id:field.dataset.messageId,text:content,attachment:media,replyToId:reply?.id||null});if(selectedReply?.id===reply?.id){selectedReply=null;paintReply();}if(attachmentKey===mediaKey){clearMedia();paintAttachment();}if(field.value.trim()===content){field.value='';delete field.dataset.messageId;delete field.dataset.content;}await loadThread(!!thread?.anchored);root.querySelector('#chat-text')?.focus();}
     catch(e){if(e.name!=='AbortError')error(e.message);}
     finally{if(revision===epoch){busy=false;button.disabled=false;}}
   }
+  function quoteText(message){return message.body|| (message.attachmentType==='image/jpeg'||message.attachment?.mime==='image/jpeg'?'Photo':message.attachmentType?.startsWith('audio/')||message.attachment?.mime?.startsWith('audio/')?'Voice message':'Message');}
+  function quoteHTML(quote,members){
+    const author=members.find(m=>m.id===quote.sender);
+    return `<button type="button" class="quoted-message" data-reply-jump="${esc(quote.id)}" aria-label="View original message"><strong>${esc(author?.self?'You':author?.name||'Member')}</strong><span>${esc(quoteText(quote).slice(0,180))}</span></button>`;
+  }
+  function paintReply(){
+    const preview=root?.querySelector('.chat-reply-preview');if(!preview)return;
+    if(!selectedReply){preview.replaceChildren();return;}
+    const author=thread.members.find(m=>m.id===selectedReply.sender);
+    preview.innerHTML=`<div><strong>Replying to ${esc(author?.self?'yourself':author?.name||'Member')}</strong><span>${esc(quoteText(selectedReply).slice(0,180))}</span></div><button type="button" data-reply-cancel aria-label="Cancel reply">${icon('close')}</button>`;
+  }
+  async function jumpToMessage(id){
+    let original=Array.from(root.querySelectorAll('[data-message]')).find(el=>el.dataset.message===id);
+    if(!original){if(recorder)throw new Error('Finish your recording before viewing earlier messages.');requestVersion++;await loadThread(true,id);original=Array.from(root.querySelectorAll('[data-message]')).find(el=>el.dataset.message===id);}
+    if(original){original.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});original.classList.add('reply-highlight');setTimeout(()=>original.classList.remove('reply-highlight'),1800);}
+  }
+
   function attachmentHTML(media){
     if(!/^\/api\/chat-media\/[a-f0-9-]{36}$/.test(media.url))return '';
     return media.mime==='image/jpeg'?`<a class="chat-photo-link" href="${esc(media.url)}" target="_blank" rel="noopener"><img class="chat-photo-message" src="${esc(media.url)}" alt="Photo shared in this conversation" loading="lazy"></a>`:`<div class="chat-voice-message">${icon('mic')}<audio controls preload="none" src="${esc(media.url)}" aria-label="Voice message"></audio><span>${media.duration}s</span></div>`;

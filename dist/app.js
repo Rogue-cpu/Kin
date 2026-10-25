@@ -44,6 +44,7 @@
   let fandomFilter = 'all';
   let search = '';
   const openComments = new Set();
+  const postReplyDrafts = new Map();
   const content = document.getElementById('view-content');
   const modal = document.getElementById('modal');
   const modalContent = document.getElementById('modal-content');
@@ -142,6 +143,17 @@
     if (accounts.active && document.querySelector('.right-footer span')) document.querySelector('.right-footer span').textContent = 'Kin private beta · Unofficial fan portrayals';
   }
 
+  function rememberPostReply(event){
+    const form=event.target.closest('[data-comment-form]');if(!form)return;
+    const draft=postReplyDrafts.get(form.dataset.commentForm)||{};
+    postReplyDrafts.set(form.dataset.commentForm,{...draft,text:form.elements.comment.value,mode:form.elements.mode.value});
+  }
+  function renderPostReplies(post){
+    const draft=postReplyDrafts.get(post.id)||{text:'',mode:post.mode};
+    const target=post.comments.find(comment=>comment.id===draft.parentReplyId);
+    return `<div class="post-comments">${post.comments.map(comment=>`<div class="comment ${comment.replyTo?'is-comment-reply':''}" ${comment.id?`data-comment-id="${escape(comment.id)}"`:''}>${comment.replyTo?`<button type="button" class="comment-quote" data-action="jump-comment" data-id="${escape(post.id)}" data-comment-id="${escape(comment.replyTo.id)}"><strong>${escape(comment.replyTo.name)}</strong><span>${escape(comment.replyTo.text)}</span></button>`:''}<p><strong>${escape(comment.name)}</strong><span class="reply-mode">${comment.mode==='ooc'?'OOC':'IC'}</span>${escape(comment.text)}</p>${comment.id?`<button type="button" class="comment-reply-button" data-action="reply-comment" data-id="${escape(post.id)}" data-comment-id="${escape(comment.id)}">Reply</button>`:''}</div>`).join('')}${target?`<div class="comment-reply-preview"><div><strong>Replying to ${escape(target.name)}</strong><span>${escape(target.text.slice(0,180))}</span></div><button type="button" data-action="cancel-comment-reply" data-id="${escape(post.id)}" aria-label="Cancel comment reply">${svg('close')}</button></div>`:''}<form class="comment-form" data-comment-form="${escape(post.id)}">${avatar(person('self'),'avatar-xs')}<select name="mode" aria-label="Reply as character or writer"><option value="ic" ${draft.mode!=='ooc'?'selected':''}>IC</option><option value="ooc" ${draft.mode==='ooc'?'selected':''}>OOC</option></select><input name="comment" aria-label="Your reply" placeholder="${target?'Reply to '+escape(target.name)+'…':isPersonal()?'Write a reply…':'Continue the scene…'}" maxlength="2000" required autocomplete="off" value="${escape(draft.text||'')}"><button type="submit">Reply</button></form></div>`;
+  }
+
   function renderPost(post) {
     const who = person(post.author);
     const expanded = openComments.has(post.id);
@@ -149,11 +161,11 @@
     return `<article class="post" data-post="${escape(post.id)}">
       <header class="post-header">${avatar(who)}<div><button class="post-author" data-person="${escape(who.id)}">${escape(who.name)}</button><div class="post-meta">${escape(who.fandom || 'Original / Other')}<span>·</span>${escape(ago(post.created))}</div></div><span class="post-audience ${post.mode === 'ooc' ? 'mode-ooc' : ''}">${modeLabel(post.mode)}</span></header>
       ${imageSafe ? `<div class="post-image-wrap"><img class="post-image" src="${escape(post.image)}" alt="${escape(post.alt || 'Photo shared by ' + who.name)}" loading="lazy">${post.location ? `<span class="image-caption">${escape(post.location)}</span>` : ''}</div>` : ''}
-      <div class="post-actions"><button class="icon-button ${post.liked ? 'liked' : ''}" data-action="like" data-id="${escape(post.id)}" aria-label="${post.liked ? 'Unlike' : 'Like'} post" aria-pressed="${post.liked}">${svg('heart')}</button><button class="icon-button" data-action="comments" data-id="${escape(post.id)}" aria-label="Comment on post" aria-expanded="${expanded}">${svg('comment')}</button><button class="icon-button save-action ${post.saved ? 'saved' : ''}" data-action="save" data-id="${escape(post.id)}" aria-label="${post.saved ? 'Unsave' : 'Save'} post" aria-pressed="${post.saved}">${svg('bookmark')}</button></div>
+      <div class="post-actions"><button class="icon-button ${post.liked ? 'liked' : ''}" data-action="like" data-id="${escape(post.id)}" aria-label="${post.liked ? 'Unlike' : 'Like'} post" aria-pressed="${post.liked}">${svg('heart')}</button><button class="icon-button" data-action="comments" data-id="${escape(post.id)}" aria-label="Reply to post" aria-expanded="${expanded}">${svg('comment')}</button><button class="icon-button save-action ${post.saved ? 'saved' : ''}" data-action="save" data-id="${escape(post.id)}" aria-label="${post.saved ? 'Unsave' : 'Save'} post" aria-pressed="${post.saved}">${svg('bookmark')}</button></div>
       <p class="post-likes">${post.likes + Number(post.liked)} ${post.likes + Number(post.liked) === 1 ? 'like' : 'likes'}${post.liked ? ' · including you' : ''}<span class="post-visibility">${svg('lock')}${audienceLabel(post.audience)}</span></p>
       <p class="post-caption"><strong>${escape(who.name.split(' ')[0])}</strong>${escape(post.caption)}</p>
-      <button class="comments-toggle" data-action="comments" data-id="${escape(post.id)}" aria-expanded="${expanded}">${expanded ? 'Hide replies' : post.comments.length ? `Read ${post.comments.length === 1 ? 'the reply' : `all ${post.comments.length} replies`}` : 'Write the next line'}</button>${post.author === 'self' ? `<button class="delete-button" data-action="delete" data-id="${escape(post.id)}">Delete post</button>` : ''}
-      ${expanded ? `<div class="post-comments">${post.comments.map((comment) => `<p class="comment"><strong>${escape(comment.name)}</strong><span class="reply-mode">${comment.mode === 'ooc' ? 'OOC' : 'IC'}</span>${escape(comment.text)}</p>`).join('')}<form class="comment-form" data-comment-form="${escape(post.id)}">${avatar(person('self'), 'avatar-xs')}<select name="mode" aria-label="Reply as character or writer"><option value="ic" ${post.mode !== 'ooc' ? 'selected' : ''}>IC</option><option value="ooc" ${post.mode === 'ooc' ? 'selected' : ''}>OOC</option></select><input name="comment" aria-label="Your roleplay reply" placeholder="Continue the scene…" maxlength="2000" required autocomplete="off"><button type="submit">Reply</button></form></div>` : ''}
+      <button class="comments-toggle" data-action="comments" data-id="${escape(post.id)}" aria-expanded="${expanded}">${expanded ? 'Hide replies' : post.comments.length ? `Read ${post.comments.length === 1 ? 'the reply' : `all ${post.comments.length} replies`}` : 'Reply to post'}</button>${post.author === 'self' ? `<button class="delete-button" data-action="delete" data-id="${escape(post.id)}">Delete post</button>` : ''}
+      ${expanded ? renderPostReplies(post) : ''}
     </article>`;
   }
 
@@ -465,6 +477,16 @@
     const action = button.dataset.action;
     const id = button.dataset.id;
     const post = state.posts.find((item) => item.id === id);
+    if(action==='reply-comment'||action==='cancel-comment-reply'){
+      if(!post)return;const target=post.comments.find(c=>c.id===button.dataset.commentId);
+      if(action==='reply-comment'&&!target)return;
+      const draft=postReplyDrafts.get(id)||{text:'',mode:post.mode};draft.parentReplyId=target?.id||null;postReplyDrafts.set(id,draft);openComments.add(id);render();
+      Array.from(content.querySelectorAll('[data-comment-form]')).find(form=>form.dataset.commentForm===id)?.elements.comment.focus({preventScroll:true});return;
+    }
+    if(action==='jump-comment'){
+      const original=Array.from(content.querySelectorAll('[data-comment-id]')).find(el=>el.classList.contains('comment')&&el.dataset.commentId===button.dataset.commentId);
+      if(original){original.scrollIntoView({block:'center',behavior:'smooth'});original.classList.add('reply-highlight');setTimeout(()=>original.classList.remove('reply-highlight'),1800);}return;
+    }
     if(action==='message-person'){navigate('messages');window.KinMessages.startWith(id);return;}
     if(action==='profile-posts'){navigate('feed');personFilter=id;renderFeed();return;}
     if(action==='open-post'){const author=post?.author;navigate('feed');personFilter=author||'self';renderFeed();Array.from(content.querySelectorAll('.post')).find(post=>post.dataset.post===id)?.scrollIntoView({block:'center'});return;}
@@ -507,7 +529,8 @@
     const text = form.elements.comment.value.trim();
     if (!post || !text) return;
     const mode = form.elements.mode.value === 'ooc' ? 'ooc' : 'ic';
-    if (await commit(() => post.comments.push({ name: state.profile.name, mode, text }))) render();
+    const parentReplyId=postReplyDrafts.get(post.id)?.parentReplyId||null;
+    if (await commit(() => post.comments.push({ name: state.profile.name, mode, text, parentReplyId }))) {postReplyDrafts.delete(post.id);render();}
   });
   document.addEventListener('change', async (event) => {
     if(event.target.id==='profile-switch'){const select=event.target;select.disabled=true;try{await accounts.switchProfile(select.value);window.scrollTo({top:0});toast(isPersonal()?'Switched to your personal profile.':'Switched to your roleplay profile.');}catch(error){select.value=state.profileKind;toast(error.message);}finally{select.disabled=false;}return;}
@@ -518,6 +541,8 @@
     const group = event.target.value;
     if (who && ['cast', 'partners'].includes(group)) { if (await commit(() => { who.group = group; })) render(); }
   });
+  document.addEventListener('input', rememberPostReply);
+  document.addEventListener('change', rememberPostReply);
   document.addEventListener('input', (event) => {
     if (event.target.id === 'people-search') { search = event.target.value; document.getElementById('people-list').innerHTML = peopleRows(state.people.filter((who) => who.name.toLowerCase().includes(search.toLowerCase()))); }
   });
@@ -540,9 +565,9 @@
   modal.addEventListener('cancel', event => { if (saving) event.preventDefault(); });
   accounts.boot({
     onDemo() { render(); },
-    onState(next) { window.KinCalls.sync(next); viewedProfile='self'; profileCollection='all'; state = next; view = 'feed'; filter = 'all'; personFilter = null; fandomFilter = 'all'; openComments.clear(); render(); },
+    onState(next) { postReplyDrafts.clear(); window.KinCalls.sync(next); viewedProfile='self'; profileCollection='all'; state = next; view = 'feed'; filter = 'all'; personFilter = null; fandomFilter = 'all'; openComments.clear(); render(); },
     onRefresh(next) { window.KinCalls.sync(next); state = next; render(); },
-    onLock() { window.KinCalls.close(); window.KinMessages.close(); state = {version:1,profile:{name:'Your character',fandom:'Original / Other'},people:[],posts:[],requests:[],outgoing:[],invitations:[]}; openComments.clear(); },
+    onLock() { postReplyDrafts.clear(); window.KinCalls.close(); window.KinMessages.close(); state = {version:1,profile:{name:'Your character',fandom:'Original / Other'},people:[],posts:[],requests:[],outgoing:[],invitations:[]}; openComments.clear(); },
     isBusy() { return saving || window.KinMessages.busy || window.KinCalls.busy; }
   });
   if (!storageAvailable) toast('Saved data couldn’t be loaded. You can explore the sample feed; changes may not persist.');

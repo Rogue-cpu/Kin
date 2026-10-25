@@ -121,7 +121,7 @@ export async function createApplication({ db, origin, registrationCode, producti
         people: connections.filter(row => row.status === 'accepted').map(row => characterView(row, userId)),
         requests: connections.filter(row => row.status === 'pending' && row.recipient === userId).map(row => characterView(row, userId)),
         outgoing: connections.filter(row => row.status === 'pending' && row.requester === userId).map(row => ({ id: row.id, name: row.character.name, handle: row.handle })), invitations: [],
-        posts: rows.map(row => ({ id: row.id, author: row.author === userId ? 'self' : row.author, created: new Date(row.created_at).getTime(), audience: row.audience, mode: row.mode, image: row.image_id ? `/api/media/${row.image_id}` : '', alt: row.alt, caption: row.caption, likes: row.likes, liked: row.liked, saved: row.saved, comments: replies.filter(reply => reply.post_id === row.id).map(reply => ({ id: reply.id, name: reply.name, text: reply.body, mode: reply.mode })) }))
+        posts: rows.map(row => ({ id: row.id, author: row.author === userId ? 'self' : row.author, created: new Date(row.created_at).getTime(), audience: row.audience, mode: row.mode, image: row.image_id ? `/api/media/${row.image_id}` : '', alt: row.alt, caption: row.caption, likes: row.likes, liked: row.liked, saved: row.saved, comments: replies.filter(reply => reply.post_id === row.id).map(reply => { const parent=replies.find(p=>p.id===reply.parent_reply_id&&p.post_id===row.id);return {id:reply.id,name:reply.name,text:reply.body,mode:reply.mode,replyTo:parent?{id:parent.id,name:parent.name,text:parent.body.slice(0,180)}:null}; }) }))
       };
     });
   }
@@ -174,7 +174,9 @@ export async function createApplication({ db, origin, registrationCode, producti
       }
       case 'reply': {
         await canReadPost(client,userId,data.id,kind);
-        await client.query('INSERT INTO kin_replies(id,post_id,author,body,mode) VALUES($1,$2,$3,$4,$5)',[randomUUID(),data.id,userId,text(data.text,2000,true),choice(data.mode,['ic','ooc'])]); break;
+        const parentId=data.parentReplyId==null?null:id(data.parentReplyId);
+        if(parentId)deny(!(await client.query('SELECT id FROM kin_replies WHERE id=$1 AND post_id=$2',[parentId,data.id])).rows.length,404,'That comment is unavailable on this post.');
+        await client.query('INSERT INTO kin_replies(id,post_id,author,body,mode,parent_reply_id) VALUES($1,$2,$3,$4,$5,$6)',[randomUUID(),data.id,userId,text(data.text,2000,true),choice(data.mode,['ic','ooc']),parentId]); break;
       }
       case 'request': {
         const handle=text(data.handle,24,true).toLowerCase().replace(/^@/,'');
@@ -279,7 +281,7 @@ export async function createApplication({ db, origin, registrationCode, producti
         throw new HttpError(404,'Not found.');
       }
       deny(req.method!=='GET' && req.method!=='HEAD',405,'Method not allowed.');
-      const assets={'/calls.js':['calls.js','text/javascript'],'/calls.css':['calls.css','text/css'],'/messages.js':['messages.js','text/javascript'],'/messages.css':['messages.css','text/css'],'/':['index.html','text/html'],'/index.html':['index.html','text/html'],'/app.js':['app.js','text/javascript'],'/accounts.js':['accounts.js','text/javascript'],'/accounts.css':['accounts.css','text/css'],'/profiles.css':['profiles.css','text/css'],'/login-friends.jpg':['login-friends.jpg','image/jpeg'],'/login-portrait.jpg':['login-portrait.jpg','image/jpeg'],'/login-story.jpg':['login-story.jpg','image/jpeg'],'/styles.css':['styles.css','text/css']};
+      const assets={'/replies.css':['replies.css','text/css'],'/calls.js':['calls.js','text/javascript'],'/calls.css':['calls.css','text/css'],'/messages.js':['messages.js','text/javascript'],'/messages.css':['messages.css','text/css'],'/':['index.html','text/html'],'/index.html':['index.html','text/html'],'/app.js':['app.js','text/javascript'],'/accounts.js':['accounts.js','text/javascript'],'/accounts.css':['accounts.css','text/css'],'/profiles.css':['profiles.css','text/css'],'/login-friends.jpg':['login-friends.jpg','image/jpeg'],'/login-portrait.jpg':['login-portrait.jpg','image/jpeg'],'/login-story.jpg':['login-story.jpg','image/jpeg'],'/styles.css':['styles.css','text/css']};
       const asset=assets[route];deny(!asset,404,'Not found.');
       const bytes=await readFile(new URL(`./dist/${asset[0]}`,import.meta.url));
       res.writeHead(200,{'Content-Type':`${asset[1]}; charset=utf-8`});res.end(req.method==='HEAD' ? undefined : bytes);

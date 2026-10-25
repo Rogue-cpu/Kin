@@ -120,4 +120,6 @@ CREATE TABLE IF NOT EXISTS kin_call_signals (
 );
 CREATE INDEX IF NOT EXISTS kin_call_signals_recipient ON kin_call_signals(call_id,recipient,seq);
 ALTER TABLE kin_call_members ADD COLUMN IF NOT EXISTS joined_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE kin_messages ADD COLUMN IF NOT EXISTS reply_to uuid REFERENCES kin_messages(id) ON DELETE SET NULL;
+ALTER TABLE kin_replies ADD COLUMN IF NOT EXISTS parent_reply_id uuid REFERENCES kin_replies(id) ON DELETE SET NULL;
 COMMIT;
