@@ -115,6 +115,8 @@
   function renderChrome() {
     document.body.classList.toggle('profile-screen', view === 'profile');
     document.body.classList.toggle('messages-screen', view === 'messages');
+    document.body.classList.toggle('notifications-screen',view==='notifications');
+    if(view!=='notifications')window.KinNotifications.clearView();
     if(view !== 'messages') window.KinMessages.close();
     const self = person('self');
     document.querySelectorAll('.self-avatar').forEach((element) => { element.outerHTML = avatar(self, element.classList.contains('avatar-xs') ? 'avatar-xs' : ''); });
@@ -126,6 +128,7 @@
     document.getElementById('sidebar-people').innerHTML = state.people.slice(0, 4).map((who) => `<div class="sidebar-person">${avatar(who)}<div><strong>${escape(who.name)}</strong><small>${escape(who.label)}</small></div><span class="person-dot" title="Approved connection"></span></div>`).join('');
     document.querySelectorAll('[data-view]').forEach((button) => button.classList.toggle('active', button.dataset.view === view));
     const headings = {
+      notifications: ['YOUR ACTIVITY','Notifications','Likes, replies, and your connections.'],
       messages: ['YOUR CONVERSATIONS', 'Messages', 'Private chats with your approved connections.'],
       feed: ['YOUR CHARACTERS. YOUR STORIES.', 'Step into the story', 'Familiar worlds. Original plots. Written together.'],
       people: ['FIND YOUR SCENE PARTNERS', 'Every story needs a cast', 'Approve connections and build your roleplay circle.'],
@@ -236,7 +239,7 @@
     document.querySelector('.main-footer').textContent = isPersonal() ? 'Little moments. Real connections.' : 'Your characters. Your stories. Unofficial fan roleplay.';
     document.querySelector('.right-footer').textContent = isPersonal() ? 'Your personal life, shared with your approved people. Kin private beta.' : 'Fan-made stories. Unofficial portrayals. Kin private beta.';
     if (isPersonal()) {
-      const headings = {messages:['YOUR CONVERSATIONS','Messages','Private chats with your approved connections.'],feed:['YOUR EVERYDAY, SHARED','Life looks good on you','Photos, updates, and familiar faces.'],people:['YOUR INNER CIRCLE','The people in your life','Approve the people you want to share with.'],profile:['YOUR PERSONAL SPACE','A little more you','Your photos, your updates, your real life.'],saved:['KEEP THE LITTLE THINGS','Saved for later','Photos and updates you want to revisit.'],settings:['YOUR ACCOUNT, YOUR CHOICES','Make yourself at home','Two profiles. One secure sign-in.']};
+      const headings = {notifications:['YOUR ACTIVITY','Notifications','Likes, replies, and your connections.'],messages:['YOUR CONVERSATIONS','Messages','Private chats with your approved connections.'],feed:['YOUR EVERYDAY, SHARED','Life looks good on you','Photos, updates, and familiar faces.'],people:['YOUR INNER CIRCLE','The people in your life','Approve the people you want to share with.'],profile:['YOUR PERSONAL SPACE','A little more you','Your photos, your updates, your real life.'],saved:['KEEP THE LITTLE THINGS','Saved for later','Photos and updates you want to revisit.'],settings:['YOUR ACCOUNT, YOUR CHOICES','Make yourself at home','Two profiles. One secure sign-in.']};
       const heading = headings[view];
       document.getElementById('page-eyebrow').textContent=heading[0];
       document.getElementById('page-title').innerHTML=heading[1]+'<span>.</span>';
@@ -276,7 +279,8 @@
 
   function render() {
     renderChrome();
-    if(view === 'messages') window.KinMessages.render(content,state);
+    if(view==='notifications')window.KinNotifications.render(content);
+    else if(view === 'messages') window.KinMessages.render(content,state);
     else if (view === 'feed') renderFeed();
     else if (view === 'people') {
       renderPeople();
@@ -296,7 +300,7 @@
   }
 
   function navigate(next) {
-    if (!['feed', 'people', 'saved', 'profile', 'settings', 'messages'].includes(next)) return;
+    if (!['feed', 'people', 'saved', 'profile', 'settings', 'messages', 'notifications'].includes(next)) return;
     view = next;
     if(next === 'profile') {profileCollection = 'all';viewedProfile='self';}
     if (next === 'feed') { filter = 'all'; personFilter = null; fandomFilter = 'all'; }
@@ -563,12 +567,17 @@
     }
   }, true);
   modal.addEventListener('cancel', event => { if (saving) event.preventDefault(); });
+  function syncNotifications(next){window.KinNotifications.sync(next,{
+    onPeople(){navigate('people');},onMessage(id){navigate('messages');window.KinMessages.startWith(id);},
+    onPost(next,item,reply){state=next;if(item.replyId)openComments.add(item.postId);if(reply){openComments.add(item.postId);const draft=postReplyDrafts.get(item.postId)||{text:'',mode:'ic'};draft.parentReplyId=item.replyId;postReplyDrafts.set(item.postId,draft);}navigate('feed');
+      const article=Array.from(content.querySelectorAll('.post')).find(el=>el.dataset.post===item.postId);const comment=article&&Array.from(article.querySelectorAll('.comment')).find(el=>el.dataset.commentId===item.replyId);(comment||article)?.scrollIntoView({block:'center'});if(reply)article?.querySelector('.comment-form input')?.focus({preventScroll:true});}
+  });}
   accounts.boot({
     onDemo() { render(); },
-    onState(next) { postReplyDrafts.clear(); window.KinCalls.sync(next); viewedProfile='self'; profileCollection='all'; state = next; view = 'feed'; filter = 'all'; personFilter = null; fandomFilter = 'all'; openComments.clear(); render(); },
-    onRefresh(next) { window.KinCalls.sync(next); state = next; render(); },
-    onLock() { postReplyDrafts.clear(); window.KinCalls.close(); window.KinMessages.close(); state = {version:1,profile:{name:'Your character',fandom:'Original / Other'},people:[],posts:[],requests:[],outgoing:[],invitations:[]}; openComments.clear(); },
-    isBusy() { return saving || window.KinMessages.busy || window.KinCalls.busy; }
+    onState(next) { postReplyDrafts.clear(); window.KinCalls.sync(next); syncNotifications(next); viewedProfile='self'; profileCollection='all'; state = next; view = 'feed'; filter = 'all'; personFilter = null; fandomFilter = 'all'; openComments.clear(); render(); },
+    onRefresh(next) { window.KinCalls.sync(next);syncNotifications(next); state = next; render(); },
+    onLock() { window.KinNotifications.stop();postReplyDrafts.clear(); window.KinCalls.close(); window.KinMessages.close(); state = {version:1,profile:{name:'Your character',fandom:'Original / Other'},people:[],posts:[],requests:[],outgoing:[],invitations:[]}; openComments.clear(); },
+    isBusy() { return saving || window.KinMessages.busy || window.KinCalls.busy || window.KinNotifications.busy; }
   });
   if (!storageAvailable) toast('Saved data couldn’t be loaded. You can explore the sample feed; changes may not persist.');
 })();

@@ -33,7 +33,7 @@
     document.getElementById('view-content').replaceChildren();
     document.getElementById('sidebar-people').replaceChildren();
     document.getElementById('profile-mode-bar')?.remove();
-    document.body.classList.remove('profile-personal', 'profile-screen', 'messages-screen');
+    document.body.classList.remove('profile-personal', 'profile-screen', 'messages-screen', 'notifications-screen');
     document.querySelector('.prototype-notice').textContent = 'Your private Kin account';
     document.querySelector('.account-button small').textContent = 'Personal and roleplay profiles';
     document.querySelector('.account-button strong').textContent = 'Your character';

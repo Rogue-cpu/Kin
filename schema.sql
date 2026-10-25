@@ -126,4 +126,16 @@ ALTER TABLE kin_chat_assets ADD CONSTRAINT kin_chat_assets_mime_check CHECK(mime
 ALTER TABLE kin_messages ADD COLUMN IF NOT EXISTS giphy_id text CHECK(giphy_id IS NULL OR giphy_id ~ '^[A-Za-z0-9]{1,64}$');
 ALTER TABLE kin_messages DROP CONSTRAINT IF EXISTS kin_messages_content_check;
 ALTER TABLE kin_messages ADD CONSTRAINT kin_messages_content_check CHECK(length(body)<=4000 AND (length(body)>0 OR attachment_id IS NOT NULL OR giphy_id IS NOT NULL) AND NOT(attachment_id IS NOT NULL AND giphy_id IS NOT NULL));
+CREATE TABLE IF NOT EXISTS kin_notifications (
+ seq bigserial PRIMARY KEY,id uuid NOT NULL UNIQUE,event_key text NOT NULL UNIQUE,
+ recipient uuid NOT NULL REFERENCES kin_users(id) ON DELETE CASCADE,actor uuid NOT NULL REFERENCES kin_users(id) ON DELETE CASCADE,
+ profile_kind text NOT NULL CHECK(profile_kind IN ('personal','roleplay')),
+ event_type text NOT NULL CHECK(event_type IN ('like','comment','comment_reply','request','accepted')),
+ post_id text REFERENCES kin_posts(id) ON DELETE CASCADE,reply_id uuid REFERENCES kin_replies(id) ON DELETE CASCADE,
+ connection_id uuid REFERENCES kin_connections(id) ON DELETE CASCADE,created_at timestamptz NOT NULL DEFAULT now(),read_at timestamptz,
+ CHECK(recipient<>actor)
+);
+CREATE INDEX IF NOT EXISTS kin_notifications_inbox ON kin_notifications(recipient,profile_kind,seq DESC);
+INSERT INTO kin_notifications(id,event_key,recipient,actor,profile_kind,event_type,connection_id,created_at)
+ SELECT id,'request:'||id::text,recipient,requester,profile_kind,'request',id,created_at FROM kin_connections WHERE status='pending' ON CONFLICT DO NOTHING;
 COMMIT;

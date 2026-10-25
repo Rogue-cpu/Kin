@@ -1,3 +1,4 @@
+import {notificationRoutes,recordNotification} from './notifications.mjs';
 import { iceConfiguration } from './calls.mjs';
 import { chatRoutes } from './messages.mjs';
 import http from 'node:http';
@@ -98,7 +99,7 @@ export async function createApplication({ db, origin, registrationCode, producti
     const character = row.status === 'pending' ? { ...row.character, portrait: '' } : row.character;
     return { ...character, id: row.id === viewer ? 'self' : row.id, handle: row.handle, initials: character.name.split(/\s+/).slice(0,2).map(part => part[0]).join('').toUpperCase(), group: row.circle || 'cast', label: character.fandom };
   }
-  async function stateFor(userId, kind = 'roleplay') {
+  async function stateFor(userId, kind = 'roleplay', focusPost = null) {
     // A transaction keeps profile, membership, and the feed in one database snapshot.
     return transaction(async client => {
       await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
@@ -112,7 +113,7 @@ export async function createApplication({ db, origin, registrationCode, producti
         (SELECT count(*)::int FROM kin_likes l WHERE l.post_id=p.id AND l.user_id<>$1) likes,
         EXISTS(SELECT 1 FROM kin_likes l WHERE l.post_id=p.id AND l.user_id=$1) liked,
         EXISTS(SELECT 1 FROM kin_bookmarks b WHERE b.post_id=p.id AND b.user_id=$1) saved
-        FROM kin_posts p WHERE ${CAN_READ} ORDER BY p.created_at DESC LIMIT 200`, [userId, kind])).rows;
+        FROM kin_posts p WHERE ${CAN_READ} ORDER BY (p.id=$3) DESC,p.created_at DESC LIMIT 200`, [userId, kind,focusPost])).rows;
       const replies = rows.length ? (await client.query(`SELECT r.*,CASE WHEN $2='personal' THEN u.personal->>'name' ELSE u.character->>'name' END name FROM kin_replies r JOIN kin_users u ON u.id=r.author WHERE r.post_id=ANY($1::text[]) ORDER BY r.created_at,r.id`, [rows.map(row => row.id), kind])).rows : [];
       return {
         version: 1, live: true, profileKind: kind,
@@ -166,17 +167,19 @@ export async function createApplication({ db, origin, registrationCode, producti
         deny(!removed.rows.length,404,'That post is unavailable.'); break;
       }
       case 'like': case 'bookmark': {
-        await canReadPost(client,userId,data.id,kind);
+        const post=await canReadPost(client,userId,data.id,kind);
         deny(typeof data.value !== 'boolean',400,'Invalid toggle.');
         const table=action.type==='like' ? 'kin_likes' : 'kin_bookmarks';
-        if (data.value) await client.query(`INSERT INTO ${table}(user_id,post_id) VALUES($1,$2) ON CONFLICT DO NOTHING`,[userId,data.id]);
-        else await client.query(`DELETE FROM ${table} WHERE user_id=$1 AND post_id=$2`,[userId,data.id]); break;
+        if(data.value){const inserted=await client.query(`INSERT INTO ${table}(user_id,post_id) VALUES($1,$2) ON CONFLICT DO NOTHING RETURNING post_id`,[userId,data.id]);
+          if(action.type==='like'&&inserted.rows.length)await recordNotification(client,{recipient:post.author,actor:userId,kind,type:'like',key:'like:'+data.id+':'+userId,postId:data.id});
+        }else{await client.query(`DELETE FROM ${table} WHERE user_id=$1 AND post_id=$2`,[userId,data.id]);if(action.type==='like')await client.query('DELETE FROM kin_notifications WHERE event_key=$1',['like:'+data.id+':'+userId]);}break;
       }
       case 'reply': {
-        await canReadPost(client,userId,data.id,kind);
-        const parentId=data.parentReplyId==null?null:id(data.parentReplyId);
-        if(parentId)deny(!(await client.query('SELECT id FROM kin_replies WHERE id=$1 AND post_id=$2',[parentId,data.id])).rows.length,404,'That comment is unavailable on this post.');
-        await client.query('INSERT INTO kin_replies(id,post_id,author,body,mode,parent_reply_id) VALUES($1,$2,$3,$4,$5,$6)',[randomUUID(),data.id,userId,text(data.text,2000,true),choice(data.mode,['ic','ooc']),parentId]); break;
+        const post=await canReadPost(client,userId,data.id,kind),parentId=data.parentReplyId==null?null:id(data.parentReplyId);
+        let parent=null;if(parentId){parent=(await client.query('SELECT id,author FROM kin_replies WHERE id=$1 AND post_id=$2',[parentId,data.id])).rows[0];deny(!parent,404,'That comment is unavailable on this post.');}
+        const replyId=randomUUID();await client.query('INSERT INTO kin_replies(id,post_id,author,body,mode,parent_reply_id) VALUES($1,$2,$3,$4,$5,$6)',[replyId,data.id,userId,text(data.text,2000,true),choice(data.mode,['ic','ooc']),parentId]);
+        const recipients=new Set([post.author,...(parent?[parent.author]:[])]);
+        for(const recipient of recipients)await recordNotification(client,{recipient,actor:userId,kind,type:parent?.author===recipient?'comment_reply':'comment',key:'comment:'+replyId+':'+recipient,postId:data.id,replyId});break;
       }
       case 'request': {
         const handle=text(data.handle,24,true).toLowerCase().replace(/^@/,'');
@@ -184,11 +187,12 @@ export async function createApplication({ db, origin, registrationCode, producti
         deny(!target || target.id===userId,404,'No available account with that handle.');
         const existing=await client.query('SELECT id FROM kin_connections WHERE profile_kind=$3 AND ((requester=$1 AND recipient=$2) OR (requester=$2 AND recipient=$1))',[userId,target.id,kind]);
         deny(existing.rows.length,409,'A connection or request already exists.');
-        await client.query('INSERT INTO kin_connections(id,requester,recipient,profile_kind) VALUES($1,$2,$3,$4)',[randomUUID(),userId,target.id,kind]); break;
+        const connectionId=randomUUID();await client.query('INSERT INTO kin_connections(id,requester,recipient,profile_kind) VALUES($1,$2,$3,$4)',[connectionId,userId,target.id,kind]);
+        await recordNotification(client,{recipient:target.id,actor:userId,kind,type:'request',key:'request:'+connectionId,connectionId});break;
       }
       case 'accept': {
         const result=await client.query("UPDATE kin_connections SET status='accepted' WHERE requester=$1 AND recipient=$2 AND status='pending' AND profile_kind=$3 RETURNING id",[id(data.id),userId,kind]);
-        deny(!result.rows.length,404,'That request is unavailable.'); break;
+        deny(!result.rows.length,404,'That request is unavailable.');await recordNotification(client,{recipient:data.id,actor:userId,kind,type:'accepted',key:'accepted:'+result.rows[0].id,connectionId:result.rows[0].id});break;
       }
       case 'decline': {
         await client.query("DELETE FROM kin_connections WHERE requester=$1 AND recipient=$2 AND status='pending' AND profile_kind=$3",[id(data.id),userId,kind]); break;
@@ -211,6 +215,7 @@ export async function createApplication({ db, origin, registrationCode, producti
     try { const data=JSON.parse(Buffer.concat(chunks).toString()); deny(!data || Array.isArray(data) || typeof data!=='object',400,'Invalid request.'); return data; }
     catch(error) { if(error instanceof HttpError)throw error; throw new HttpError(400,'Invalid JSON.'); }
   }
+  const handleNotifications=notificationRoutes({transaction,limited,deny,id,canRead:CAN_READ});
   const handleChats=chatRoutes({transaction,limited,deny,text,id,iceConfig:()=>iceConfiguration(callConfig),giphyKey});
   const server=http.createServer(async (req,res)=>{
     res.setHeader('X-Content-Type-Options','nosniff');
@@ -262,8 +267,9 @@ export async function createApplication({ db, origin, registrationCode, producti
         const user=await session(req);
         if(req.method==='POST' && route==='/api/auth/logout') {await query('DELETE FROM kin_sessions WHERE token_hash=$1',[user.tokenHash]);res.setHeader('Set-Cookie',cookie('',0));send(200,{ok:true});return;}
         const kind=choice(req.headers['x-kin-profile'] || 'roleplay',['roleplay','personal']);
+        if(await handleNotifications({req,route,url,body,user,kind,send}))return;
         if(await handleChats({req,route,url,body,user,kind,send,res}))return;
-        if(req.method==='GET' && route==='/api/state') {send(200,await stateFor(user.id,kind));return;}
+        if(req.method==='GET' && route==='/api/state') {const focus=url.searchParams.has('post')?postId(url.searchParams.get('post')):null;const state=await stateFor(user.id,kind,focus);deny(focus&&!state.posts.some(p=>p.id===focus),404,'That post is unavailable.');send(200,state);return;}
         if(req.method==='POST' && route==='/api/actions') {
           deny(!Array.isArray(body.actions) || body.actions.length<1 || body.actions.length>20,400,'Invalid changes.');
           await limited(`writes:${user.id}`,180,60);
@@ -281,7 +287,7 @@ export async function createApplication({ db, origin, registrationCode, producti
         throw new HttpError(404,'Not found.');
       }
       deny(req.method!=='GET' && req.method!=='HEAD',405,'Method not allowed.');
-      const assets={'/giphy.js':['giphy.js','text/javascript'],'/giphy-attribution.png':['giphy-attribution.png','image/png'],'/gifs.css':['gifs.css','text/css'],'/replies.css':['replies.css','text/css'],'/calls.js':['calls.js','text/javascript'],'/calls.css':['calls.css','text/css'],'/messages.js':['messages.js','text/javascript'],'/messages.css':['messages.css','text/css'],'/':['index.html','text/html'],'/index.html':['index.html','text/html'],'/app.js':['app.js','text/javascript'],'/accounts.js':['accounts.js','text/javascript'],'/accounts.css':['accounts.css','text/css'],'/profiles.css':['profiles.css','text/css'],'/login-friends.jpg':['login-friends.jpg','image/jpeg'],'/login-portrait.jpg':['login-portrait.jpg','image/jpeg'],'/login-story.jpg':['login-story.jpg','image/jpeg'],'/styles.css':['styles.css','text/css']};
+      const assets={'/notifications.js':['notifications.js','text/javascript'],'/notifications.css':['notifications.css','text/css'],'/giphy.js':['giphy.js','text/javascript'],'/giphy-attribution.png':['giphy-attribution.png','image/png'],'/gifs.css':['gifs.css','text/css'],'/replies.css':['replies.css','text/css'],'/calls.js':['calls.js','text/javascript'],'/calls.css':['calls.css','text/css'],'/messages.js':['messages.js','text/javascript'],'/messages.css':['messages.css','text/css'],'/':['index.html','text/html'],'/index.html':['index.html','text/html'],'/app.js':['app.js','text/javascript'],'/accounts.js':['accounts.js','text/javascript'],'/accounts.css':['accounts.css','text/css'],'/profiles.css':['profiles.css','text/css'],'/login-friends.jpg':['login-friends.jpg','image/jpeg'],'/login-portrait.jpg':['login-portrait.jpg','image/jpeg'],'/login-story.jpg':['login-story.jpg','image/jpeg'],'/styles.css':['styles.css','text/css']};
       const asset=assets[route];deny(!asset,404,'Not found.');
       const bytes=await readFile(new URL(`./dist/${asset[0]}`,import.meta.url));
       res.writeHead(200,{'Content-Type':`${asset[1]}; charset=utf-8`});res.end(req.method==='HEAD' ? undefined : bytes);

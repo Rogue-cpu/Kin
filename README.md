@@ -93,6 +93,10 @@ GitHub Actions runs the API suite on Node 24 for pushes and pull requests. Produ
 
 ## Beta scope
 
+**Notifications** shows real post likes, comments, replies to comments, incoming connection requests, and accepted requests. The dark activity screen groups rows into New, Yesterday, and Earlier using the browser's local dates, with approved-profile photos and authorized post thumbnails. Reply opens the relevant post/comment, Message selects an approved connection, and requests can be approved or declined in place. Personal and roleplay activity and read state stay separate. Unread badges poll every 15 seconds while the app is visible; there are no operating-system push notifications. All/Unread filters, individual reads, snapshot-based Mark all read, and 50-row history pages are supported.
+
+Activity is written transactionally with each action. Repeated likes do not duplicate activity; self-likes and self-comments do not notify. Quoted comment replies notify the parent comment author as well as the post author when they are different people. Every list and unread-count request rechecks current post visibility, the actor's access, or connection status. Unlike, post deletion, request cancellation, connection removal, and circle changes remove or hide stale activity as appropriate. Unconnected writers on a shared post can be identified by their comment name; their account handle and private profile photo are not exposed. Notification links can open a visible post outside the latest 200 feed entries without expanding the feed limit. New activity starts with this release; existing pending connection requests are carried over with their original timestamps. Past likes and comments are not fabricated or backdated into the activity log.
+
 Profiles use a dark, mobile-first layout with an avatar, bio, private-connection status, and a three-column post grid. The owner's stats count their currently loaded posts, approved connections, and photo posts; peer profiles show connected status without exposing their connection lists. Circular collections filter actual posts (All posts, Photos, and roleplay-only In character / Writer notes). These are automatic filters, not saved story highlights. Grid tiles open their author's visible feed; the alternative feed tab displays full posts. Approved peers have a Message button. There are no public follower counts.
 
 This version supports one personal profile, one roleplay character, and the latest 200 visible posts per profile. The export includes the active profile's visible state, not an unlimited account archive. Feed updates are checked every 30 seconds while the page is visible, or manually through **Settings & trust → Refresh feed**.
@@ -119,6 +123,7 @@ Read receipts, presence, push notifications, adding/removing members after group
 
 - `server.mjs`: HTTP server, authentication, authorization, and Postgres operations.
 - `messages.mjs`: profile-scoped conversation membership, text messaging, and history.
+- `notifications.mjs`, `dist/notifications.js`: private activity events, read state, badges, and the activity screen.
 - `chat-attachments.mjs`, `calls.mjs`: attachment validation, private media, and call signaling/configuration.
 - `gif-validation.mjs`, `dist/giphy.js`: GIF upload validation and direct browser GIPHY integration.
 - `schema.sql`: initial dedicated database schema.
