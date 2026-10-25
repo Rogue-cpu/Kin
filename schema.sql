@@ -100,7 +100,6 @@ CREATE TABLE IF NOT EXISTS kin_chat_assets (
 ALTER TABLE kin_messages ADD COLUMN IF NOT EXISTS attachment_id uuid REFERENCES kin_chat_assets(id);
 ALTER TABLE kin_messages DROP CONSTRAINT IF EXISTS kin_messages_body_check;
 ALTER TABLE kin_messages DROP CONSTRAINT IF EXISTS kin_messages_content_check;
-ALTER TABLE kin_messages ADD CONSTRAINT kin_messages_content_check CHECK(length(body)<=4000 AND (length(body)>0 OR attachment_id IS NOT NULL));
 CREATE TABLE IF NOT EXISTS kin_calls (
  id uuid PRIMARY KEY,chat_id uuid NOT NULL REFERENCES kin_chats(id) ON DELETE CASCADE,
  caller uuid NOT NULL REFERENCES kin_users(id), video boolean NOT NULL DEFAULT false,
@@ -122,4 +121,9 @@ CREATE INDEX IF NOT EXISTS kin_call_signals_recipient ON kin_call_signals(call_i
 ALTER TABLE kin_call_members ADD COLUMN IF NOT EXISTS joined_at timestamptz NOT NULL DEFAULT now();
 ALTER TABLE kin_messages ADD COLUMN IF NOT EXISTS reply_to uuid REFERENCES kin_messages(id) ON DELETE SET NULL;
 ALTER TABLE kin_replies ADD COLUMN IF NOT EXISTS parent_reply_id uuid REFERENCES kin_replies(id) ON DELETE SET NULL;
+ALTER TABLE kin_chat_assets DROP CONSTRAINT IF EXISTS kin_chat_assets_mime_check;
+ALTER TABLE kin_chat_assets ADD CONSTRAINT kin_chat_assets_mime_check CHECK(mime IN ('image/jpeg','image/gif','audio/webm','audio/ogg','audio/mp4'));
+ALTER TABLE kin_messages ADD COLUMN IF NOT EXISTS giphy_id text CHECK(giphy_id IS NULL OR giphy_id ~ '^[A-Za-z0-9]{1,64}$');
+ALTER TABLE kin_messages DROP CONSTRAINT IF EXISTS kin_messages_content_check;
+ALTER TABLE kin_messages ADD CONSTRAINT kin_messages_content_check CHECK(length(body)<=4000 AND (length(body)>0 OR attachment_id IS NOT NULL OR giphy_id IS NOT NULL) AND NOT(attachment_id IS NOT NULL AND giphy_id IS NOT NULL));
 COMMIT;

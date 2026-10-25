@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 const CONNECTED = `NOT EXISTS (SELECT 1 FROM kin_chat_members a JOIN kin_chat_members b ON a.chat_id=b.chat_id AND a.user_id<b.user_id WHERE a.chat_id=c.id AND NOT EXISTS (SELECT 1 FROM kin_connections r WHERE r.profile_kind=c.profile_kind AND r.status='accepted' AND ((r.requester=a.user_id AND r.recipient=b.user_id) OR (r.recipient=a.user_id AND r.requester=b.user_id))))`;
 export const CHAT_ACCESS = `c.profile_kind=$2 AND EXISTS(SELECT 1 FROM kin_chat_members m WHERE m.chat_id=c.id AND m.user_id=$1) AND ${CONNECTED}`;
 
-export function chatRoutes({ transaction, limited, deny, text, id, iceConfig }) {
+export function chatRoutes({ transaction, limited, deny, text, id, iceConfig, giphyKey }) {
   async function authorize(client,user,kind,chat) {
     const row=(await client.query(`SELECT c.* FROM kin_chats c WHERE c.id=$3 AND ${CHAT_ACCESS} FOR UPDATE`,[user,kind,chat])).rows[0];
     deny(!row,404,'This conversation is unavailable. All members must remain approved connections.');
@@ -17,6 +17,7 @@ export function chatRoutes({ transaction, limited, deny, text, id, iceConfig }) 
   }
   const calls=callRoutes({transaction,limited,deny,text,id,authorize,participants,iceConfig});
   return async ({req,route,url,body,user,kind,send,res})=>{
+    if(req.method==='GET'&&route==='/api/giphy/config'){send(200,{apiKey:giphyKey,enabled:!!giphyKey});return true;}
     if(await calls({req,route,url,body,user,kind,send}))return true;
     if(req.method==='GET'&&/^\/api\/chat-media\/[a-f0-9-]{36}$/.test(route)){
       const assetId=id(route.split('/')[3]);
@@ -42,7 +43,7 @@ export function chatRoutes({ transaction, limited, deny, text, id, iceConfig }) 
     if(req.method==='GET'&&route==='/api/chats') {
       const chats=await transaction(async client=>{
         await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
-        const rows=(await client.query(`SELECT c.id,c.title,c.is_group,c.created_at,(SELECT CASE WHEN attachment_id IS NOT NULL AND body='' THEN 'Attachment' ELSE body END FROM kin_messages WHERE chat_id=c.id ORDER BY seq DESC LIMIT 1) AS preview,(SELECT created_at FROM kin_messages WHERE chat_id=c.id ORDER BY seq DESC LIMIT 1) AS updated_at FROM kin_chats c WHERE ${CHAT_ACCESS} ORDER BY COALESCE((SELECT max(seq) FROM kin_messages WHERE chat_id=c.id),0) DESC,c.created_at DESC LIMIT 100`,[user.id,kind])).rows;
+        const rows=(await client.query(`SELECT c.id,c.title,c.is_group,c.created_at,(SELECT CASE WHEN giphy_id IS NOT NULL AND body='' THEN 'GIF' WHEN attachment_id IS NOT NULL AND body='' THEN 'Attachment' ELSE body END FROM kin_messages WHERE chat_id=c.id ORDER BY seq DESC LIMIT 1) AS preview,(SELECT created_at FROM kin_messages WHERE chat_id=c.id ORDER BY seq DESC LIMIT 1) AS updated_at FROM kin_chats c WHERE ${CHAT_ACCESS} ORDER BY COALESCE((SELECT max(seq) FROM kin_messages WHERE chat_id=c.id),0) DESC,c.created_at DESC LIMIT 100`,[user.id,kind])).rows;
         for(const c of rows)c.members=await participants(client,c.id,kind,user.id);
         return rows;
       });send(200,{chats});return true;
@@ -74,7 +75,7 @@ export function chatRoutes({ transaction, limited, deny, text, id, iceConfig }) 
       const result=await transaction(async client=>{
         const conversation=await authorize(client,user.id,kind,chat);
         if(around)deny(!(await client.query('SELECT id FROM kin_messages WHERE id=$1 AND chat_id=$2',[around,chat])).rows.length,404,'Original message unavailable.');
-        const rows=(await client.query(`SELECT m.seq::text,m.id,m.sender,m.body,m.created_at,CASE WHEN original.id IS NULL THEN NULL ELSE json_build_object('id',original.id,'sender',original.sender,'body',left(original.body,180),'attachmentType',original_asset.mime) END AS "replyTo",CASE WHEN a.id IS NULL THEN NULL ELSE json_build_object('url','/api/chat-media/'||a.id::text,'mime',a.mime,'duration',a.duration) END AS attachment FROM kin_messages m LEFT JOIN kin_chat_assets a ON a.id=m.attachment_id LEFT JOIN kin_messages original ON original.id=m.reply_to AND original.chat_id=m.chat_id LEFT JOIN kin_chat_assets original_asset ON original_asset.id=original.attachment_id WHERE m.chat_id=$1 AND ($3::uuid IS NULL OR m.seq<=(SELECT seq FROM kin_messages WHERE id=$3 AND chat_id=$1)) AND ($2::bigint IS NULL OR m.seq<$2::bigint) ORDER BY m.seq DESC LIMIT 101`,[chat,raw,around])).rows;
+        const rows=(await client.query(`SELECT m.seq::text,m.id,m.sender,m.body,m.created_at,m.giphy_id AS "giphyId",CASE WHEN original.id IS NULL THEN NULL ELSE json_build_object('id',original.id,'sender',original.sender,'body',left(original.body,180),'attachmentType',CASE WHEN original.giphy_id IS NOT NULL THEN 'image/giphy' ELSE original_asset.mime END) END AS "replyTo",CASE WHEN a.id IS NULL THEN NULL ELSE json_build_object('url','/api/chat-media/'||a.id::text,'mime',a.mime,'duration',a.duration) END AS attachment FROM kin_messages m LEFT JOIN kin_chat_assets a ON a.id=m.attachment_id LEFT JOIN kin_messages original ON original.id=m.reply_to AND original.chat_id=m.chat_id LEFT JOIN kin_chat_assets original_asset ON original_asset.id=original.attachment_id WHERE m.chat_id=$1 AND ($3::uuid IS NULL OR m.seq<=(SELECT seq FROM kin_messages WHERE id=$3 AND chat_id=$1)) AND ($2::bigint IS NULL OR m.seq<$2::bigint) ORDER BY m.seq DESC LIMIT 101`,[chat,raw,around])).rows;
         const more=rows.length>100;const messages=rows.slice(0,100).reverse().map(r=>({...r,self:r.sender===user.id}));
         return {id:chat,title:conversation.title,isGroup:conversation.is_group,members:await participants(client,chat,kind,user.id),messages,hasMore:more,anchored:!!around};
       });send(200,result);return true;
@@ -82,16 +83,18 @@ export function chatRoutes({ transaction, limited, deny, text, id, iceConfig }) 
     if(req.method==='POST') {
       await limited(`chat-send:${user.id}`,60,60);
       const content=text(body.text||'',4000), messageId=id(body.id), replyToId=body.replyToId==null?null:id(body.replyToId);
+      const giphyId=body.giphyId==null?null:body.giphyId;deny(giphyId!==null&&(typeof giphyId!=='string'||!/^[A-Za-z0-9]{1,64}$/.test(giphyId)),400,'Invalid GIPHY identifier.');
+      deny(giphyId&&body.attachment,400,'Choose a GIF or a file attachment, not both.');
       const attachment=body.attachment?decodeAttachment(body.attachment,deny):null;
-      deny(!content&&!attachment,400,'Write a message or choose an attachment.');
+      deny(!content&&!attachment&&!giphyId,400,'Write a message or choose an attachment.');
       await transaction(async client=>{
         await authorize(client,user.id,kind,chat);
-        const previous=(await client.query('SELECT m.sender,m.chat_id,m.body,m.reply_to,a.fingerprint FROM kin_messages m LEFT JOIN kin_chat_assets a ON a.id=m.attachment_id WHERE m.id=$1',[messageId])).rows[0];
-        if(previous){deny(previous.sender!==user.id||previous.chat_id!==chat||previous.body!==content||(previous.reply_to||null)!==replyToId||(previous.fingerprint||null)!==(attachment?.fingerprint||null),409,'That message identifier is already used.');return;}
+        const previous=(await client.query('SELECT m.sender,m.chat_id,m.body,m.reply_to,m.giphy_id,a.fingerprint FROM kin_messages m LEFT JOIN kin_chat_assets a ON a.id=m.attachment_id WHERE m.id=$1',[messageId])).rows[0];
+        if(previous){deny(previous.sender!==user.id||previous.chat_id!==chat||previous.body!==content||(previous.giphy_id||null)!==giphyId||(previous.reply_to||null)!==replyToId||(previous.fingerprint||null)!==(attachment?.fingerprint||null),409,'That message identifier is already used.');return;}
         if(replyToId)deny(!(await client.query('SELECT id FROM kin_messages WHERE id=$1 AND chat_id=$2',[replyToId,chat])).rows.length,404,'Original message unavailable in this conversation.');
         let assetId=null;
         if(attachment){assetId=randomUUID();await client.query('INSERT INTO kin_chat_assets(id,chat_id,owner,mime,bytes,fingerprint,duration) VALUES($1,$2,$3,$4,$5,$6,$7)',[assetId,chat,user.id,attachment.mime,attachment.bytes,attachment.fingerprint,attachment.duration]);}
-        await client.query('INSERT INTO kin_messages(id,chat_id,sender,body,attachment_id,reply_to) VALUES($1,$2,$3,$4,$5,$6)',[messageId,chat,user.id,content,assetId,replyToId]);
+        await client.query('INSERT INTO kin_messages(id,chat_id,sender,body,attachment_id,reply_to,giphy_id) VALUES($1,$2,$3,$4,$5,$6,$7)',[messageId,chat,user.id,content,assetId,replyToId,giphyId]);
       });send(201,{ok:true});return true;
     }
     deny(true,405,'Method not supported.');

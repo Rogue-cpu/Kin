@@ -60,7 +60,7 @@ export function resolveAppOrigin(rawOrigin, railwayDomain) {
   return parsed.origin;
 }
 
-export async function createApplication({ db, origin, registrationCode, production = true, migrate = true, callConfig = null }) {
+export async function createApplication({ db, origin, registrationCode, production = true, migrate = true, callConfig = null, giphyKey = process.env.GIPHY_API_KEY || '' }) {
   deny(!db, 500, 'Database is required.');
   origin = resolveAppOrigin(origin);
   deny(production && !origin.startsWith('https://'), 500, 'Production requires an HTTPS origin.');
@@ -211,14 +211,14 @@ export async function createApplication({ db, origin, registrationCode, producti
     try { const data=JSON.parse(Buffer.concat(chunks).toString()); deny(!data || Array.isArray(data) || typeof data!=='object',400,'Invalid request.'); return data; }
     catch(error) { if(error instanceof HttpError)throw error; throw new HttpError(400,'Invalid JSON.'); }
   }
-  const handleChats=chatRoutes({transaction,limited,deny,text,id,iceConfig:()=>iceConfiguration(callConfig)});
+  const handleChats=chatRoutes({transaction,limited,deny,text,id,iceConfig:()=>iceConfiguration(callConfig),giphyKey});
   const server=http.createServer(async (req,res)=>{
     res.setHeader('X-Content-Type-Options','nosniff');
     res.setHeader('Permissions-Policy','camera=(self), microphone=(self)');
     res.setHeader('Referrer-Policy','no-referrer');
     res.setHeader('X-Frame-Options','DENY');
     res.setHeader('Cache-Control','no-store');
-    res.setHeader('Content-Security-Policy',"default-src 'self'; media-src 'self' blob: data:; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://images.unsplash.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+    res.setHeader('Content-Security-Policy',"default-src 'self'; media-src 'self' blob: data:; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://images.unsplash.com https://*.giphy.com; connect-src 'self' https://api.giphy.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
     const send=(status,data)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(data));};
     try {
       const url=new URL(req.url,'http://localhost'); const route=url.pathname;
@@ -281,7 +281,7 @@ export async function createApplication({ db, origin, registrationCode, producti
         throw new HttpError(404,'Not found.');
       }
       deny(req.method!=='GET' && req.method!=='HEAD',405,'Method not allowed.');
-      const assets={'/replies.css':['replies.css','text/css'],'/calls.js':['calls.js','text/javascript'],'/calls.css':['calls.css','text/css'],'/messages.js':['messages.js','text/javascript'],'/messages.css':['messages.css','text/css'],'/':['index.html','text/html'],'/index.html':['index.html','text/html'],'/app.js':['app.js','text/javascript'],'/accounts.js':['accounts.js','text/javascript'],'/accounts.css':['accounts.css','text/css'],'/profiles.css':['profiles.css','text/css'],'/login-friends.jpg':['login-friends.jpg','image/jpeg'],'/login-portrait.jpg':['login-portrait.jpg','image/jpeg'],'/login-story.jpg':['login-story.jpg','image/jpeg'],'/styles.css':['styles.css','text/css']};
+      const assets={'/giphy.js':['giphy.js','text/javascript'],'/giphy-attribution.png':['giphy-attribution.png','image/png'],'/gifs.css':['gifs.css','text/css'],'/replies.css':['replies.css','text/css'],'/calls.js':['calls.js','text/javascript'],'/calls.css':['calls.css','text/css'],'/messages.js':['messages.js','text/javascript'],'/messages.css':['messages.css','text/css'],'/':['index.html','text/html'],'/index.html':['index.html','text/html'],'/app.js':['app.js','text/javascript'],'/accounts.js':['accounts.js','text/javascript'],'/accounts.css':['accounts.css','text/css'],'/profiles.css':['profiles.css','text/css'],'/login-friends.jpg':['login-friends.jpg','image/jpeg'],'/login-portrait.jpg':['login-portrait.jpg','image/jpeg'],'/login-story.jpg':['login-story.jpg','image/jpeg'],'/styles.css':['styles.css','text/css']};
       const asset=assets[route];deny(!asset,404,'Not found.');
       const bytes=await readFile(new URL(`./dist/${asset[0]}`,import.meta.url));
       res.writeHead(200,{'Content-Type':`${asset[1]}; charset=utf-8`});res.end(req.method==='HEAD' ? undefined : bytes);

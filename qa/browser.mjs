@@ -1,3 +1,4 @@
+import {gifBytes} from './gif-fixture.mjs';
 import { spawn } from 'node:child_process';
 import { mkdtemp,writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -7,7 +8,7 @@ import { testDatabase } from '../test/database.mjs';
 
 const db=await testDatabase();
 const origin='http://127.0.0.1:4317',invite='browser-test-invitation-code-keep-local';
-const server=await createApplication({db,origin,registrationCode:invite,production:false,callConfig:{iceServers:[],relayConfigured:false}});
+const server=await createApplication({db,origin,registrationCode:invite,production:false,giphyKey:process.env.KIN_TEST_GIPHY_KEY||'',callConfig:{iceServers:[],relayConfigured:false}});
 await new Promise(resolve=>server.listen(4317,'127.0.0.1',resolve));
 const directory=await mkdtemp(join(tmpdir(),'kin-account-browser-'));
 const chrome=spawn('C:/Program Files/Google/Chrome/Application/chrome.exe',['--headless','--use-fake-ui-for-media-stream','--use-fake-device-for-media-stream','--autoplay-policy=no-user-gesture-required','--disable-gpu','--disable-background-networking','--no-first-run','--no-default-browser-check','--remote-debugging-port=0',`--user-data-dir=${directory}`,'--window-size=1440,1000','about:blank'],{windowsHide:true,stdio:['ignore','ignore','pipe']});
@@ -129,6 +130,47 @@ try{
   await evaluate('document.querySelector(".chat-voice-message audio").play()');
   await check('A recorded voice message plays from private media','document.querySelector(".chat-voice-message audio").readyState>=2');
   await evaluate('document.querySelector(".chat-voice-message").closest(".chat-message").querySelector(".message-reply-button").click()');await check('Voice notes can be selected for a reply','document.querySelector(".chat-reply-preview").textContent.includes("Voice message")');await click('[data-reply-cancel]');
+  await click('[data-chat-gif]');
+  if(process.env.KIN_TEST_GIPHY_KEY){
+    await waitFor('document.querySelectorAll("[data-giphy-choice]").length>0');
+    await waitFor('Array.from(document.querySelectorAll(".gif-results img")).slice(0,3).every(img=>img.complete&&img.naturalWidth>0)');
+    await check('GIPHY trending loads real results','document.querySelector(".kin-gif-picker[open]")!==null&&document.querySelectorAll("[data-giphy-choice]").length>0');
+    await check('GIPHY attribution is visible','document.querySelector(".kin-gif-picker .giphy-attribution").complete&&document.querySelector(".kin-gif-picker .giphy-attribution").naturalWidth>0');
+    await check('Mobile GIPHY picker fits the viewport','document.querySelector(".kin-gif-picker").getBoundingClientRect().right<=window.innerWidth&&document.documentElement.scrollWidth<=window.innerWidth');
+    const giphyQueries=[];
+    await cdp('Network.enable');
+    const recordGiphyQuery=event=>{const message=JSON.parse(event.data);if(message.method==='Network.requestWillBeSent'&&message.sessionId===sessionId){const url=new URL(message.params.request.url);if(url.hostname==='api.giphy.com'&&url.searchParams.has('q'))giphyQueries.push(url.searchParams.get('q'));}};
+    socket.addEventListener('message',recordGiphyQuery);
+    await click('[data-gif-query="WWE"]');await waitFor('document.querySelectorAll("[data-giphy-choice]").length>0&&!document.querySelector(".gif-picker-status").textContent.includes("Searching")');
+    if(!giphyQueries.includes('WWE'))throw new Error('GIPHY search did not run directly in the browser');console.log('PASS: WWE search calls GIPHY directly from the browser');
+    await check('Search GIFs use GIPHY media URLs','Array.from(document.querySelectorAll(".gif-results img")).every(img=>new URL(img.src).hostname.endsWith(".giphy.com"))');
+    const giphyPickerScreenshot=await cdp('Page.captureScreenshot',{format:'png'});await writeFile(new URL('./giphy-picker-mobile.png',import.meta.url),Buffer.from(giphyPickerScreenshot.data,'base64'));
+    if(await evaluate('!document.querySelector("[data-gif-more]").hidden')){const count=await evaluate('document.querySelectorAll("[data-giphy-choice]").length');await click('[data-gif-more]');await waitFor('document.querySelectorAll("[data-giphy-choice]").length>'+count);console.log('PASS: More GIFs appends another GIPHY page');}
+    await click('[data-giphy-choice]');await waitFor('!document.querySelector(".kin-gif-picker")&&Boolean(document.querySelector(".chat-attachment-preview img"))&&!KinMessages.busy');
+    await check('GIPHY preview loads its returned media directly','new URL(document.querySelector(".chat-attachment-preview img").src).hostname.endsWith(".giphy.com")');
+    await evaluate('document.getElementById("chat-compose").requestSubmit()');await waitFor('Boolean(document.querySelector(".giphy-message .chat-gif-message"))&&!KinMessages.busy');
+    await waitFor('document.querySelector(".giphy-message .chat-gif-message").complete&&document.querySelector(".giphy-message .chat-gif-message").naturalWidth>0');
+    await check('Sent GIPHY GIF resolves by ID and plays in the conversation','new URL(document.querySelector(".giphy-message .chat-gif-message").src).hostname.endsWith(".giphy.com")');
+    await evaluate('document.querySelector(".giphy-message").closest(".chat-message").querySelector(".message-reply-button").click()');await check('GIPHY GIFs support quoted replies','document.querySelector(".chat-reply-preview").textContent.includes("GIF")');
+    await fill('chat-text','That GIF fits our scene.');await evaluate('document.getElementById("chat-compose").requestSubmit()');await waitFor('Array.from(document.querySelectorAll(".quoted-message")).some(el=>el.textContent.includes("GIF"))&&!KinMessages.busy');
+    socket.removeEventListener('message',recordGiphyQuery);
+  }else{
+    await waitFor('document.querySelector(".gif-picker-status").textContent.includes("not connected")');
+    await check('Missing GIPHY key displays a setup message','document.querySelector(".kin-gif-picker[open]")!==null');await click('[data-gif-close]');
+  }
+  if(!await evaluate('Boolean(document.querySelector(".kin-gif-picker"))'))await click('[data-chat-gif]');
+  const gifFixtureData=gifBytes('love').toString('base64');
+  const gifUploadExpression='(async()=>{const blob=new Blob([Uint8Array.from(atob('+JSON.stringify(gifFixtureData)+'),c=>c.charCodeAt(0))],{type:"image/gif"});const transfer=new DataTransfer();transfer.items.add(new File([blob],"my-reaction.gif",{type:"image/gif"}));const input=document.getElementById("gif-upload-file");input.files=transfer.files;input.dispatchEvent(new Event("change",{bubbles:true}));})()';
+  await evaluate(gifUploadExpression);await waitFor('!document.querySelector(".kin-gif-picker")&&Boolean(document.querySelector(".chat-attachment-preview img"))&&!KinMessages.busy');
+  await check('GIF file upload preserves animation data','document.querySelector(".chat-attachment-preview img").src.startsWith("data:image/gif;base64,")');
+  await evaluate('document.getElementById("chat-compose").requestSubmit()');await waitFor('Boolean(document.querySelector(".chat-photo-link .chat-gif-message"))&&!KinMessages.busy');
+  await waitFor('document.querySelector(".chat-photo-link .chat-gif-message").complete&&document.querySelector(".chat-photo-link .chat-gif-message").naturalWidth>0');
+  await check('Uploaded GIF uses private authenticated media','document.querySelector(".chat-photo-link .chat-gif-message").src.includes("/api/chat-media/")');
+  await click('[data-chat-gif]');await evaluate('(()=>{const transfer=new DataTransfer();transfer.items.add(new File([new Uint8Array(3145729)],"too-large.gif",{type:"image/gif"}));const input=document.getElementById("gif-upload-file");input.files=transfer.files;input.dispatchEvent(new Event("change",{bubbles:true}));})()');
+  await waitFor('document.querySelector(".gif-picker-error").textContent.includes("3 MB")');await check('Oversized GIF upload gives an actionable error','document.querySelector(".kin-gif-picker[open]")!==null');await click('[data-gif-close]');
+  await evaluate('(async()=>{const blob=new Blob([Uint8Array.from(atob('+JSON.stringify(gifFixtureData)+'),c=>c.charCodeAt(0))],{type:"image/gif"});const clipboard=new DataTransfer();clipboard.items.add(new File([blob],"pasted.gif",{type:"image/gif"}));document.getElementById("chat-text").dispatchEvent(new ClipboardEvent("paste",{bubbles:true,cancelable:true,clipboardData:clipboard}));})()');
+  await waitFor('Boolean(document.querySelector(".chat-attachment-preview img"))&&!KinMessages.busy');await check('Pasted GIFs can be attached from the clipboard','document.querySelector(".chat-attachment-preview img").src.startsWith("data:image/gif;base64,")');await click('[data-media-remove]');
+
   const bobContext=await send('Target.createBrowserContext');
   const bobTarget=await send('Target.createTarget',{url:'about:blank',browserContextId:bobContext.browserContextId});
   const bobSession=(await send('Target.attachToTarget',{targetId:bobTarget.targetId,flatten:true})).sessionId;
