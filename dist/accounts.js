@@ -42,7 +42,48 @@
   function authScreen(mode = 'login', message = '') {
     clearPrivateView(); toggleApp(false);
     const register = mode === 'register', recover = mode === 'recover';
-    gate.innerHTML = `<div class="auth-card"><a class="brand" href="/">kin<span class="brand-flower">✳</span></a><p class="eyebrow">YOUR CHARACTERS. YOUR STORIES.</p><h1>${register ? 'Your next chapter starts here.' : recover ? 'Find your way back.' : 'Welcome back, writer.'}</h1><p class="auth-description">${register ? 'Create your writer account, then become your character. Your profile stays inside your approved circle.' : recover ? 'Use the recovery code you saved when you joined. This replaces your password and signs out your other sessions.' : 'Sign in to your characters, your cast, and the stories you share.'}</p><form id="auth-form"><label class="field-label" for="auth-handle">Writer handle</label><input class="field-input" id="auth-handle" name="username" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="your_writer_handle">${register ? '<label class="field-label" for="auth-invite">Invite code</label><input class="field-input" id="auth-invite" required maxlength="256" autocomplete="off" placeholder="The code shared by your host">' : ''}${recover ? '<label class="field-label" for="auth-recovery">Recovery code</label><input class="field-input" id="auth-recovery" required maxlength="128" autocomplete="off">' : ''}<label class="field-label" for="auth-password">${recover ? 'New password' : 'Password'}</label><input class="field-input" id="auth-password" name="password" type="password" required minlength="12" maxlength="128" autocomplete="${register || recover ? 'new-password' : 'current-password'}"><p class="small-note">${register || recover ? 'Use at least 12 characters. Save your recovery code somewhere safe.' : 'Your writer handle is separate from your character name.'}</p><p id="auth-error" class="form-error" role="alert">${escape(message)}</p><button class="button button-primary auth-submit" type="submit">${register ? 'Create account' : recover ? 'Reset password' : 'Sign in'}</button></form><div class="auth-links">${mode !== 'login' ? '<button class="text-button" data-auth="login">Back to sign in</button>' : '<button class="text-button" data-auth="register">Have an invite? Join Kin</button><button class="text-button" data-auth="recover">Recover your account</button>'}</div><p class="auth-footnote">Unofficial fan roleplay · Not affiliated with featured franchises.</p></div>`;
+    gate.innerHTML = `<div class="auth-layout">
+      <section class="auth-story" aria-labelledby="auth-intro-title">
+        <a class="auth-logo" href="/" aria-label="Kin home"><span class="auth-emblem" aria-hidden="true">✳</span><span>kin</span></a>
+        <div class="auth-story-content"><h1 id="auth-intro-title">Your everyday moments.<br>Your <span>extraordinary stories.</span></h1>
+          <div class="auth-collage" aria-hidden="true">
+            <div class="collage-card collage-left"><img src="/login-portrait.jpg" alt="" width="420" height="640"><span class="collage-progress"></span><span class="collage-caption">a familiar face</span><span class="collage-reply"></span></div>
+            <div class="collage-card collage-right"><img src="/login-story.jpg" alt="" width="420" height="640"><span class="collage-progress"></span><span class="collage-caption">a whole other world</span><span class="collage-reply"></span></div>
+            <div class="collage-card collage-center"><img src="/login-friends.jpg" alt="" width="640" height="900"><span class="collage-progress"></span><span class="collage-caption">your kind of people</span><span class="collage-reply"></span><span class="collage-small-heart">♡</span></div>
+            <span class="collage-sticker sticker-note">life lately <span>✦</span></span><span class="collage-sticker sticker-star">✦ <span>✓</span></span><span class="collage-heart">♥</span><span class="collage-orbit">✳</span>
+          </div>
+          <p class="auth-story-tagline">Real life. Roleplay. A place for both.</p>
+        </div>
+      </section>
+      <section class="auth-form-panel" aria-labelledby="auth-form-title"><div class="auth-form-content">
+        <a class="auth-mobile-brand" href="/" aria-label="Kin home">kin<span>✳</span></a>
+        <h2 id="auth-form-title">${register ? 'Create your Kin account' : recover ? 'Reset your password' : 'Log into Kin'}</h2>
+        ${register || recover ? `<p class="auth-description">${register ? 'One account for your real life and your roleplay worlds. Join with the invite code shared by your host.' : 'Enter your username and the recovery code you saved when you joined. You’ll receive a new recovery code after resetting.'}</p>` : ''}
+        <form id="auth-form" aria-labelledby="auth-form-title">
+          <label class="field-label" for="auth-handle">Username</label><input class="field-input" id="auth-handle" name="username" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="Username">
+          ${register ? '<label class="field-label" for="auth-invite">Invite code</label><input class="field-input" id="auth-invite" required maxlength="256" autocomplete="off" placeholder="Invite code">' : ''}
+          ${recover ? '<label class="field-label" for="auth-recovery">Recovery code</label><input class="field-input" id="auth-recovery" required maxlength="128" autocomplete="off" placeholder="Your recovery code">' : ''}
+          <label class="field-label" for="auth-password">${recover ? 'New password' : 'Password'}</label><div class="auth-password-field"><input class="field-input" id="auth-password" name="password" type="password" required minlength="12" maxlength="128" autocomplete="${register || recover ? 'new-password' : 'current-password'}" placeholder="${recover ? 'New password (12+ characters)' : register ? 'Password (12+ characters)' : 'Password'}"><button class="auth-password-toggle" id="toggle-auth-password" type="button" aria-label="Show password" aria-pressed="false">Show</button></div>
+          ${register || recover ? '<p class="auth-password-help">Use at least 12 characters. Keep your recovery code somewhere safe.</p>' : ''}
+          <p id="auth-error" class="form-error" role="alert">${escape(message)}</p>
+          <button class="button button-primary auth-submit" type="submit" disabled>${register ? 'Create account' : recover ? 'Reset password' : 'Log in'}</button>
+        </form>
+        ${mode === 'login' ? '<button class="auth-forgot" data-auth="recover">Forgot password?</button>' : '<button class="auth-forgot" data-auth="login">Back to log in</button>'}
+        <div class="auth-bottom"><p class="auth-profile-promise"><span class="promise-personal">◉</span><span>Personal <span class="promise-dot">·</span> Roleplay</span><span class="promise-roleplay">✦</span></p><button class="auth-create" data-auth="${mode === 'login' ? 'register' : 'login'}">${mode === 'login' ? 'Create new account' : 'Already have an account? Log in'}</button><div class="auth-bottom-brand">kin<span>✳</span></div><p class="auth-bottom-note">One login. Two sides of you.</p></div>
+      </div></section>
+    </div><footer class="auth-footer"><span>Your life. Your characters. Your people.</span><span>Private circles</span><span>Unofficial fan roleplay</span><span>© ${new Date().getFullYear()} Kin</span></footer>`;
+    const authForm = document.getElementById('auth-form');
+    const authSubmit = authForm.querySelector('[type="submit"]');
+    const updateSubmit = () => { authSubmit.disabled = busy || !authForm.checkValidity(); };
+    authForm.addEventListener('input', updateSubmit);
+    document.getElementById('toggle-auth-password').onclick = event => {
+      const field = document.getElementById('auth-password'), visible = field.type === 'password';
+      field.type = visible ? 'text' : 'password';
+      event.currentTarget.textContent = visible ? 'Hide' : 'Show';
+      event.currentTarget.setAttribute('aria-label', visible ? 'Hide password' : 'Show password');
+      event.currentTarget.setAttribute('aria-pressed', String(visible));
+    };
+    if (matchMedia('(min-width: 901px)').matches) document.getElementById('auth-handle').focus({preventScroll:true});
     gate.querySelectorAll('[data-auth]').forEach(button => { button.onclick = () => { if(!busy)authScreen(button.dataset.auth); }; });
     document.getElementById('auth-form').onsubmit = async event => {
       event.preventDefault(); if(busy)return;
@@ -57,7 +98,7 @@
         if(result.recoveryCode) recoveryScreen(result.recoveryCode);
         else await enter();
       } catch(problem) { error.textContent = problem.message; }
-      finally { busy = false; submit.disabled = false; }
+      finally { busy = false; updateSubmit(); }
     };
   }
   function recoveryScreen(code) {

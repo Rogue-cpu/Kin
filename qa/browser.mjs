@@ -30,6 +30,17 @@ try{
   const check=async(name,expression)=>{if(!await evaluate(expression))throw new Error(name);console.log('PASS: '+name);};
   await cdp('Page.navigate',{url:origin});await waitFor('Boolean(document.getElementById("auth-form"))');
   await check('Private app hidden until sign-in','getComputedStyle(document.querySelector(".app-shell")).display==="none"');
+  await waitFor('Array.from(document.querySelectorAll(".auth-collage img")).length===3&&Array.from(document.querySelectorAll(".auth-collage img")).every(image=>image.complete&&image.naturalWidth>0)');
+  await check('Sign-in uses the reference split layout','document.querySelectorAll(".auth-story .collage-card").length===3&&document.getElementById("auth-form-title").textContent==="Log into Kin"');
+  await check('Split sign-in fills the browser width','document.querySelector(".auth-layout").getBoundingClientRect().width>=document.documentElement.clientWidth-1');
+  await check('Empty sign-in form cannot be submitted','document.querySelector("#auth-form [type=submit]").disabled');
+  await click('#toggle-auth-password');await check('Password visibility toggle works','document.getElementById("auth-password").type==="text"');await click('#toggle-auth-password');
+  const authDesktop=await cdp('Page.captureScreenshot',{format:'png'});await writeFile(new URL('./auth-desktop.png',import.meta.url),Buffer.from(authDesktop.data,'base64'));
+  await cdp('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
+  await check('Mobile sign-in fits the screen','document.documentElement.scrollWidth<=window.innerWidth');
+  await check('Mobile sign-in keeps the form and Kin branding','getComputedStyle(document.querySelector(".auth-mobile-brand")).display!=="none"&&getComputedStyle(document.querySelector(".auth-story")).display==="none"');
+  const authMobile=await cdp('Page.captureScreenshot',{format:'png'});await writeFile(new URL('./auth-mobile.png',import.meta.url),Buffer.from(authMobile.data,'base64'));
+  await cdp('Emulation.clearDeviceMetricsOverride');
   await click('[data-auth="register"]');await fill('auth-handle','web_writer');await fill('auth-invite',invite);await fill('auth-password','browser test password!');await evaluate('document.getElementById("auth-form").requestSubmit()');
   await waitFor('Boolean(document.getElementById("recovery-confirm"))');await check('Registration requires saving recovery code','document.getElementById("recovery-continue").disabled');
   await click('#recovery-confirm');await click('#recovery-continue');await waitFor('!document.body.classList.contains("accounts-locked")');

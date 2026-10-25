@@ -274,7 +274,7 @@ export async function createApplication({ db, origin, registrationCode, producti
         throw new HttpError(404,'Not found.');
       }
       deny(req.method!=='GET' && req.method!=='HEAD',405,'Method not allowed.');
-      const assets={'/':['index.html','text/html'],'/index.html':['index.html','text/html'],'/app.js':['app.js','text/javascript'],'/accounts.js':['accounts.js','text/javascript'],'/accounts.css':['accounts.css','text/css'],'/profiles.css':['profiles.css','text/css'],'/styles.css':['styles.css','text/css']};
+      const assets={'/':['index.html','text/html'],'/index.html':['index.html','text/html'],'/app.js':['app.js','text/javascript'],'/accounts.js':['accounts.js','text/javascript'],'/accounts.css':['accounts.css','text/css'],'/profiles.css':['profiles.css','text/css'],'/login-friends.jpg':['login-friends.jpg','image/jpeg'],'/login-portrait.jpg':['login-portrait.jpg','image/jpeg'],'/login-story.jpg':['login-story.jpg','image/jpeg'],'/styles.css':['styles.css','text/css']};
       const asset=assets[route];deny(!asset,404,'Not found.');
       const bytes=await readFile(new URL(`./dist/${asset[0]}`,import.meta.url));
       res.writeHead(200,{'Content-Type':`${asset[1]}; charset=utf-8`});res.end(req.method==='HEAD' ? undefined : bytes);

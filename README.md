@@ -4,6 +4,10 @@ A private photo-sharing and roleplay app. One login gives you a personal profile
 
 Live app: [Open Kin](https://kin-production-155f.up.railway.app).
 
+The sign-in page uses a responsive split layout with a self-hosted photo collage, Kin branding, rounded fields, a password-visibility control, and working login, invite registration, and recovery flows. To see it while already signed in, sign out or use a private browser window.
+
+The decorative collage uses photos from Unsplash: [friends](https://images.unsplash.com/photo-1529156069898-49953e39b3ac), [portrait](https://images.unsplash.com/photo-1500648767791-00dcc994a43e), and [story portrait](https://images.unsplash.com/photo-1534528741775-53994a69daeb), distributed under the [Unsplash License](https://unsplash.com/license). The images are served locally; the sign-in page does not load them from an external photo service.
+
 Use the profile selector at the top of the app to switch between **Personal** and **Roleplay**. Each profile has its own name, avatar, bio, posts, saved posts, and approved connections. Profiles include an Instagram-style photo grid, a feed layout, and links from grid tiles to individual posts. The upgrade preserves existing characters, roleplay posts, connections, photos, and sign-ins.
 
 Personal and roleplay connections are approved separately. Roleplay access does not grant access to personal posts or avatars. The account handle is shared between both profiles, so these are separate sharing spaces rather than unlinkable identities. Active profile choice is stored per browser tab.
