@@ -207,8 +207,28 @@
       finally {submit.disabled=false;}
     };
   }
+  function characterSettings(){
+    const profiles=(state.profiles||[]).filter(p=>p.kind==='roleplay');
+    return `<section class="content-card"><div class="card-title-row"><h2>Your roleplay profiles</h2><button type="button" class="text-button" data-action="add-roleplay">+ Add profile</button></div><p>Create characters with separate usernames and private circles. Your main sign-in username is <strong>@${escape(state.accountHandle||state.profile.handle)}</strong>.</p>${profiles.map(p=>`<div class="person-row"><div><strong>${escape(p.name)}</strong><p>@${escape(p.handle)}</p></div><button class="button" data-switch-profile="${p.primary?'roleplay':'roleplay:'+p.id}" ${!isPersonal()&&p.id===state.characterId?'disabled':''}>${!isPersonal()&&p.id===state.characterId?'Active':'Switch'}</button></div>`).join('')}</section>`;
+  }
+  function createRoleplayProfile(){
+    showModal('Add roleplay profile',`<form id="character-create-form"><p class="modal-help">Give your character a name and their own username. Their posts, connections, messages, and notifications stay separate. Sign in with your main account <strong>@${escape(state.accountHandle||state.profile.handle)}</strong>.</p><label class="field-label" for="character-create-name">Character name</label><input class="field-input" id="character-create-name" required maxlength="60" placeholder="e.g. Damon Salvatore"><label class="field-label" for="character-create-handle">Character username</label><input class="field-input" id="character-create-handle" required minlength="3" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" placeholder="e.g. mystic_damon" autocomplete="off" autocapitalize="none"><label class="field-label" for="character-create-fandom">Fandom</label><select class="field-input" id="character-create-fandom">${fandomOptions('Original / Other')}</select><label class="field-label" for="character-create-role">Role (optional)</label><input class="field-input" id="character-create-role" maxlength="100" placeholder="e.g. Vampire, hunter, wrestler"><p class="form-error" id="character-create-error" role="alert"></p><div class="form-footer"><small>You can edit their photo and bio next.</small><button class="button button-primary" type="submit">Create profile</button></div></form>`);
+    const revision=modalRevision;
+    document.getElementById('character-create-form').onsubmit=async event=>{
+      event.preventDefault();if(accounts.busy)return;const button=event.target.querySelector('[type=submit]');button.disabled=true;modal.inert=true;
+      try{
+        const created=await accounts.createCharacter({name:document.getElementById('character-create-name').value.trim(),handle:document.getElementById('character-create-handle').value.trim().toLowerCase(),fandom:document.getElementById('character-create-fandom').value,role:document.getElementById('character-create-role').value.trim()||'Original character'});
+        modal.inert=false;if(modalRevision!==revision||!modal.open){await accounts.refresh();return;}modal.close();
+        try{await accounts.switchProfile('roleplay:'+created.id);navigate('profile');toast(created.name+' is ready. Add a photo and bio to make it yours.');}
+        catch(error){await accounts.refresh();toast('Profile created. Select it from the profile menu. '+error.message);}
+      }catch(error){if(modalRevision===revision)document.getElementById('character-create-error').textContent=error.status===409?'That username is already in use. Choose another one.':error.message;}
+      finally{modal.inert=false;button.disabled=false;}
+    };
+  }
+
   function renderAccountSettings() {
-    content.innerHTML=`<section class="content-card"><h2>Your Kin account</h2><p>Signed in as <strong>@${escape(state.profile.handle)}</strong>. Your password and recovery code are never included in your profile or writing export.</p><div class="setting-actions"><button class="button button-secondary" data-action="refresh">Refresh feed</button><button class="button" data-action="export">Export visible writing</button><button class="button" data-action="logout">Sign out</button></div></section><section class="content-card"><h2>Private sharing. Clear boundaries.</h2><div class="settings-section"><h3>Two separate profiles, one login</h3><p>Your personal and roleplay profiles have separate names, photos, posts, bookmarks, and connections. Approve people separately in each profile. Choose the active profile before posting. The same account handle is used to connect in both profiles.</p></div><div class="settings-section"><h3>Characters are unofficial fan portrayals</h3><p>Kin is not affiliated with WWE or the featured series. Character names and writer identities stay separate. Use IC for scenes and OOC for planning or checking boundaries.</p></div><div class="settings-section"><h3>Your way back in</h3><p>Keep the recovery code you saved when joining. Reset a forgotten password from the sign-in screen using your handle and recovery code. Recovery signs out previous sessions and issues a new code.</p></div><div class="settings-section"><h3>Connections can change</h3><p>Removing a connection stops future access to your profile, posts, and photos. People can still keep copies of content they already viewed.</p></div><div class="settings-section"><h3>This first private beta</h3><p>A personal profile and a roleplay profile per account, invite-only sign-up, and the latest 200 visible posts in each feed. Email recovery and a staffed moderation and appeals process are not available yet.</p></div></section>`;
+    content.innerHTML=`<section class="content-card"><h2>Your Kin account</h2><p>Signed in as <strong>@${escape(state.accountHandle||state.profile.handle)}</strong>. Active profile: <strong>@${escape(state.profile.handle)}</strong>. Your password and recovery code are never included in your profile or writing export.</p><div class="setting-actions"><button class="button button-secondary" data-action="refresh">Refresh feed</button><button class="button" data-action="export">Export visible writing</button><button class="button" data-action="logout">Sign out</button></div></section><section class="content-card"><h2>Private sharing. Clear boundaries.</h2><div class="settings-section"><h3>Your profiles, one login</h3><p>Keep one personal profile and up to 20 roleplay profiles on your login. Each character has its own name, photo, username, posts, connections, messages, and notifications. Choose the active profile before posting. Sign in with your main account username.</p></div><div class="settings-section"><h3>Characters are unofficial fan portrayals</h3><p>Kin is not affiliated with WWE or the featured series. Character names and writer identities stay separate. Use IC for scenes and OOC for planning or checking boundaries.</p></div><div class="settings-section"><h3>Your way back in</h3><p>Keep the recovery code you saved when joining. Reset a forgotten password from the sign-in screen using your handle and recovery code. Recovery signs out previous sessions and issues a new code.</p></div><div class="settings-section"><h3>Connections can change</h3><p>Removing a connection stops future access to your profile, posts, and photos. People can still keep copies of content they already viewed.</p></div><div class="settings-section"><h3>This first private beta</h3><p>A personal profile and multiple roleplay profiles per account, invite-only sign-up, and the latest 200 visible posts in each feed. Email recovery and a staffed moderation and appeals process are not available yet.</p></div></section>`;
+    if(accounts.active)content.insertAdjacentHTML('beforeend',characterSettings());
   }
 
   function isPersonal() { return state.profileKind === 'personal'; }
@@ -218,7 +238,8 @@
     let bar = document.getElementById('profile-mode-bar');
     if (!bar) { bar = document.createElement('div'); bar.id = 'profile-mode-bar'; document.querySelector('.page-heading').before(bar); }
     bar.className = 'profile-mode-bar';
-    bar.innerHTML = `<div class="active-identity">${avatar(person('self'))}<div><span class="identity-label">${isPersonal() ? 'PERSONAL PROFILE' : 'ROLEPLAY PROFILE'}</span><strong>${escape(state.profile.name)}</strong></div></div><label class="profile-switch-label"><span class="sr-only">Switch between personal and roleplay profiles</span><select id="profile-switch"><option value="personal" ${isPersonal() ? 'selected' : ''}>Personal · ${escape(state.profiles?.find(p=>p.kind==='personal')?.name || 'Your life')}</option><option value="roleplay" ${!isPersonal() ? 'selected' : ''}>Roleplay · ${escape(state.profiles?.find(p=>p.kind==='roleplay')?.name || 'Your character')}</option></select></label>`;
+    bar.innerHTML = `<div class="active-identity">${avatar(person('self'))}<div><span class="identity-label">${isPersonal()?'PERSONAL PROFILE':'ROLEPLAY PROFILE'}</span><strong>${escape(state.profile.name)}</strong></div></div><label class="profile-switch-label"><span class="sr-only">Switch profiles or add a roleplay profile</span><select id="profile-switch">${state.profiles.map(p=>`<option value="${p.kind==='personal'?'personal':p.primary?'roleplay':'roleplay:'+p.id}" ${p.kind===state.profileKind&&(p.kind==='personal'||p.id===state.characterId)?'selected':''}>${p.kind==='personal'?'Personal':'Roleplay'} · ${escape(p.name)}${p.kind==='roleplay'?' (@'+escape(p.handle)+')':''}</option>`).join('')}<option value="add-roleplay">+ Add roleplay profile</option></select></label>`;
+
     document.querySelector('.sidebar [data-view="profile"]>span:last-child').textContent = isPersonal() ? 'Your profile' : 'Your character';
     document.querySelector('.sidebar nav [data-view="people"]>span:first-of-type').textContent = isPersonal() ? 'Your people' : 'Your cast';
     document.querySelector('.mobile-nav [data-view="profile"]').setAttribute('aria-label',isPersonal()?'Your personal profile':'Your character');
@@ -234,12 +255,12 @@
     document.querySelector('.welcome-card .handwritten').textContent = isPersonal() ? 'Edit your personal profile ↗' : 'Edit your character ↗';
     document.querySelector('.connections-panel h2').textContent = isPersonal() ? 'Your people' : 'Your cast';
     document.querySelector('.invite-link').innerHTML = svg('plus') + (isPersonal() ? ' Connect with a friend' : ' Connect with a writer');
-    document.querySelector('.trust-note h3').textContent = 'One login. Two separate profiles.';
-    document.querySelector('.trust-note p').textContent = 'Separate names, posts, avatars, and connections. Choose your profile before sharing.';
+    document.querySelector('.trust-note h3').textContent = 'One login. Your profiles.';
+    document.querySelector('.trust-note p').textContent = 'Each profile has its own name, posts, avatar, and connections. Choose who you’re posting as.';
     document.querySelector('.main-footer').textContent = isPersonal() ? 'Kin · Made for the people of Gloridara.' : 'Your characters. Your stories. Unofficial fan roleplay.';
     document.querySelector('.right-footer').textContent = isPersonal() ? 'Your Gloridara community, shared with your approved people. Kin private beta.' : 'Fan-made stories. Unofficial portrayals. Kin private beta.';
     if (isPersonal()) {
-      const headings = {notifications:['YOUR ACTIVITY','Notifications','Likes, replies, and your connections.'],messages:['YOUR CONVERSATIONS','Messages','Private chats with your approved connections.'],feed:['GLORIDARA, CONNECTED','Your community. Your people.','Everyday moments shared with the people you choose.'],people:['YOUR GLORIDARA COMMUNITY','The people in your life','Approve the people you want to share with.'],profile:['YOUR PERSONAL SPACE','A little more you','Your photos, your updates, your real life.'],saved:['KEEP THE LITTLE THINGS','Saved for later','Photos and updates you want to revisit.'],settings:['YOUR ACCOUNT, YOUR CHOICES','Make yourself at home','Two profiles. One secure sign-in.']};
+      const headings = {notifications:['YOUR ACTIVITY','Notifications','Likes, replies, and your connections.'],messages:['YOUR CONVERSATIONS','Messages','Private chats with your approved connections.'],feed:['GLORIDARA, CONNECTED','Your community. Your people.','Everyday moments shared with the people you choose.'],people:['YOUR GLORIDARA COMMUNITY','The people in your life','Approve the people you want to share with.'],profile:['YOUR PERSONAL SPACE','A little more you','Your photos, your updates, your real life.'],saved:['KEEP THE LITTLE THINGS','Saved for later','Photos and updates you want to revisit.'],settings:['YOUR ACCOUNT, YOUR CHOICES','Make yourself at home','Your profiles. One secure sign-in.']};
       const heading = headings[view];
       document.getElementById('page-eyebrow').textContent=heading[0];
       document.getElementById('page-title').innerHTML=heading[1]+'<span>.</span>';
@@ -473,6 +494,7 @@
     if (saving || accounts.busy) return;
     const button = event.target.closest('button');
     if (!button) return;
+    if(button.dataset.switchProfile){try{await accounts.switchProfile(button.dataset.switchProfile);}catch(error){toast(error.message);}return;}
     if(button.dataset.collection){profileCollection=button.dataset.collection;renderProfile();return;}
     if(button.dataset.layout){profileLayout=button.dataset.layout;renderProfile();return;}
     if (button.dataset.view) { navigate(button.dataset.view); return; }
@@ -494,7 +516,8 @@
     if(action==='message-person'){navigate('messages');window.KinMessages.startWith(id);return;}
     if(action==='profile-posts'){navigate('feed');personFilter=id;renderFeed();return;}
     if(action==='open-post'){const author=post?.author;navigate('feed');personFilter=author||'self';renderFeed();Array.from(content.querySelectorAll('.post')).find(post=>post.dataset.post===id)?.scrollIntoView({block:'center'});return;}
-    if (action === 'create') createPost();
+    if(action==='add-roleplay')createRoleplayProfile();
+    else if (action === 'create') createPost();
     else if (action === 'invite') invite();
     else if (action === 'edit-profile') editProfile();
     else if (action === 'logout') { try { await accounts.logout(); } catch(error) { toast(error.message); } }
@@ -537,7 +560,7 @@
     if (await commit(() => post.comments.push({ name: state.profile.name, mode, text, parentReplyId }))) {postReplyDrafts.delete(post.id);render();}
   });
   document.addEventListener('change', async (event) => {
-    if(event.target.id==='profile-switch'){const select=event.target;select.disabled=true;try{await accounts.switchProfile(select.value);window.scrollTo({top:0});toast(isPersonal()?'Switched to your personal profile.':'Switched to your roleplay profile.');}catch(error){select.value=state.profileKind;toast(error.message);}finally{select.disabled=false;}return;}
+    if(event.target.id==='profile-switch'){const select=event.target;if(select.value==='add-roleplay'){select.value=isPersonal()?'personal':state.profiles.find(p=>p.id===state.characterId&&p.kind==='roleplay')?.primary?'roleplay':'roleplay:'+state.characterId;createRoleplayProfile();return;}select.disabled=true;try{await accounts.switchProfile(select.value);window.scrollTo({top:0});toast('Switched to '+state.profile.name+'.');}catch(error){renderProfileSwitcher();toast(error.message);}finally{select.disabled=false;}return;}
     if (event.target.id === 'fandom-filter') { fandomFilter = event.target.value; personFilter = null; renderFeed(); return; }
     const id = event.target.dataset.group;
     if (!id) return;
@@ -566,7 +589,7 @@
       event.target.replaceWith(replacement);
     }
   }, true);
-  modal.addEventListener('cancel', event => { if (saving) event.preventDefault(); });
+  modal.addEventListener('cancel', event => { if (saving||accounts.busy) event.preventDefault(); });
   function syncNotifications(next){window.KinNotifications.sync(next,{
     onPeople(){navigate('people');},onMessage(id){navigate('messages');window.KinMessages.startWith(id);},
     onPost(next,item,reply){state=next;if(item.replyId)openComments.add(item.postId);if(reply){openComments.add(item.postId);const draft=postReplyDrafts.get(item.postId)||{text:'',mode:'ic'};draft.parentReplyId=item.replyId;postReplyDrafts.set(item.postId,draft);}navigate('feed');

@@ -8,7 +8,7 @@
   async function api(path,data){
     const revision=epoch,controller=new AbortController();pending.add(controller);const timeout=setTimeout(()=>controller.abort(),15000);
     try{
-      const response=await fetch(path,{method:data?'POST':'GET',credentials:'same-origin',cache:'no-store',headers:{'X-Kin-Profile':context.profileKind||'roleplay',...(data?{'Content-Type':'application/json'}:{})},signal:controller.signal,body:data?JSON.stringify(data):undefined});
+      const response=await fetch(path,{method:data?'POST':'GET',credentials:'same-origin',cache:'no-store',headers:{'X-Kin-Profile':context.profileKind||'roleplay',...(context.profileKind==='roleplay'&&context.characterId?{'X-Kin-Character':context.characterId}:{}),...(data?{'Content-Type':'application/json'}:{})},signal:controller.signal,body:data?JSON.stringify(data):undefined});
       const result=await response.json();if(revision!==epoch)throw new DOMException('Profile changed','AbortError');
       if(response.status===401){window.KinAccount.expired('Sign in to see your activity.');throw new DOMException('Signed out','AbortError');}
       if(!response.ok){const error=new Error(result.error||'Activity could not load.');error.status=response.status;throw error;}return result;

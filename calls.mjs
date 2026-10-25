@@ -33,7 +33,7 @@ export function callRoutes({transaction,limited,deny,text,id,authorize,participa
       });send(200,{calls});return true;
     }
     if(req.method==='POST'&&/^\/api\/chats\/[a-f0-9-]{36}\/calls$/.test(route)){
-      await limited(`call-start:${user.id}`,15,3600);const chat=id(route.split('/')[3]);deny(typeof body.video!=='boolean',400,'Choose voice or video.');
+      await limited(`call-start:${user.accountId||user.id}`,15,3600);const chat=id(route.split('/')[3]);deny(typeof body.video!=='boolean',400,'Choose voice or video.');
       const callId=await transaction(async client=>{
         await authorize(client,user.id,kind,chat);
         await client.query("DELETE FROM kin_calls WHERE expires_at<now()-interval '1 day'");
@@ -59,7 +59,7 @@ export function callRoutes({transaction,limited,deny,text,id,authorize,participa
       });send(200,result);return true;
     }
     if(req.method==='POST'&&action){
-      await limited(`call-write:${user.id}`,600,60);
+      await limited(`call-write:${user.accountId||user.id}`,600,60);
       await transaction(async client=>{
         const call=await callFor(client,user.id,kind,cid);
         if(action==='join'){

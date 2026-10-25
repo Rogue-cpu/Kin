@@ -14,7 +14,7 @@
     const revision=epoch,controller=new AbortController();pending.add(controller);
     const timeout=setTimeout(()=>controller.abort(),15000);
     try {
-      const response=await fetch(path,{method:data?'POST':'GET',credentials:'same-origin',cache:'no-store',signal:controller.signal,headers:{'X-Kin-Profile':kind,...(data?{'Content-Type':'application/json'}:{})},body:data?JSON.stringify(data):undefined});
+      const response=await fetch(path,{method:data?'POST':'GET',credentials:'same-origin',cache:'no-store',signal:controller.signal,headers:{'X-Kin-Profile':kind,...(kind==='roleplay'&&context?.characterId?{'X-Kin-Character':context.characterId}:{}),...(data?{'Content-Type':'application/json'}:{})},body:data?JSON.stringify(data):undefined});
       const result=await response.json();
       if(revision!==epoch||!root?.isConnected)throw new DOMException('View changed','AbortError');
       if(response.status===401){window.KinAccount.expired('Sign in to read your messages.');throw new DOMException('Signed out','AbortError');}
@@ -38,7 +38,7 @@
     finally{if(revision===epoch)loading=false;}
   }
   function render(container,state){
-    if(root===container.querySelector('.messenger')&&kind===state.profileKind){context=state;return;}
+    if(root===container.querySelector('.messenger')&&kind===state.profileKind&&context?.characterId===state.characterId){context=state;return;}
     close();root=document.createElement('section');root.className='messenger';root.setAttribute('aria-label','Private messages');context=state;kind=state.profileKind||'roleplay';
     root.innerHTML=`<aside class="chat-inbox"><header><div><span class="chat-mode">${kind==='personal'?'PERSONAL':'ROLEPLAY'}</span><h2>Messages</h2></div><button class="icon-button" data-chat-new aria-label="New message">${icon('plus')}</button></header><div class="chat-list"><p class="chat-loading">Loading conversations…</p></div></aside><section class="chat-pane"><div class="chat-empty"><span class="chat-empty-icon">${icon('comment')}</span><h2>Your people. Your conversations.</h2><p>A quick hello, a new plot, a whole group story.</p><button class="button button-primary" data-chat-new>Send a message</button></div></section><p class="chat-error" role="status"></p>`;
     container.replaceChildren(root);

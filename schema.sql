@@ -138,4 +138,6 @@ CREATE TABLE IF NOT EXISTS kin_notifications (
 CREATE INDEX IF NOT EXISTS kin_notifications_inbox ON kin_notifications(recipient,profile_kind,seq DESC);
 INSERT INTO kin_notifications(id,event_key,recipient,actor,profile_kind,event_type,connection_id,created_at)
  SELECT id,'request:'||id::text,recipient,requester,profile_kind,'request',id,created_at FROM kin_connections WHERE status='pending' ON CONFLICT DO NOTHING;
+ALTER TABLE kin_users ADD COLUMN IF NOT EXISTS owner_id uuid REFERENCES kin_users(id) ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS kin_users_owner ON kin_users(owner_id);
 COMMIT;

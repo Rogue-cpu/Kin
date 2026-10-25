@@ -22,7 +22,7 @@ const text = (value, max, required = false) => {
   return trimmed;
 };
 const choice = (value, choices) => { deny(!choices.includes(value), 400, 'Invalid choice.'); return value; };
-const id = value => { deny(typeof value !== 'string' || !/^[a-f0-9-]{36}$/i.test(value), 400, 'Invalid identifier.'); return value; };
+const id = value => { deny(typeof value !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value), 400, 'Invalid identifier.'); return value; };
 const postId = value => { deny(typeof value !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(value), 400, 'Invalid post identifier.'); return value; };
 
 async function derivePassword(password, salt) {
@@ -86,9 +86,9 @@ export async function createApplication({ db, origin, registrationCode, producti
   async function session(req) {
     const token = /(?:^|;\s*)kin_session=([a-f0-9]{64})(?:;|$)/.exec(req.headers.cookie || '')?.[1];
     deny(!token, 401, 'Sign in to continue.');
-    const result = await query('SELECT u.id,u.handle,u.character FROM kin_sessions s JOIN kin_users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>now()', [hash(token)]);
+    const result = await query('SELECT u.id,u.handle,u.character FROM kin_sessions s JOIN kin_users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>now() AND u.owner_id IS NULL', [hash(token)]);
     deny(!result.rows[0], 401, 'Your session has ended. Please sign in again.');
-    return { ...result.rows[0], tokenHash: hash(token) };
+    return { ...result.rows[0], accountId:result.rows[0].id, tokenHash: hash(token) };
   }
   async function newSession(client, userId) {
     const token = randomBytes(32).toString('hex');
@@ -99,12 +99,14 @@ export async function createApplication({ db, origin, registrationCode, producti
     const character = row.status === 'pending' ? { ...row.character, portrait: '' } : row.character;
     return { ...character, id: row.id === viewer ? 'self' : row.id, handle: row.handle, initials: character.name.split(/\s+/).slice(0,2).map(part => part[0]).join('').toUpperCase(), group: row.circle || 'cast', label: character.fandom };
   }
-  async function stateFor(userId, kind = 'roleplay', focusPost = null) {
+  async function stateFor(userId, kind = 'roleplay', focusPost = null, accountId = userId) {
     // A transaction keeps profile, membership, and the feed in one database snapshot.
     return transaction(async client => {
       await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
       const own = (await client.query('SELECT id,handle,character,personal FROM kin_users WHERE id=$1', [userId])).rows[0];
       deny(!own, 401, 'Sign in to continue.');
+      const owner=(await client.query('SELECT id,handle,character,personal FROM kin_users WHERE id=$1 AND owner_id IS NULL',[accountId])).rows[0];deny(!owner,401,'Sign in to continue.');
+      const characters=(await client.query('SELECT id,handle,character FROM kin_users WHERE owner_id=$1 ORDER BY created_at,id',[accountId])).rows;
       const connections = (await client.query(`SELECT c.id connection_id,c.requester,c.recipient,c.status,
         CASE WHEN c.requester=$1 THEN c.requester_circle ELSE c.recipient_circle END circle,
         u.id,u.handle,CASE WHEN $2='personal' THEN u.personal ELSE u.character END AS "character" FROM kin_connections c JOIN kin_users u ON u.id=CASE WHEN c.requester=$1 THEN c.recipient ELSE c.requester END
@@ -116,9 +118,9 @@ export async function createApplication({ db, origin, registrationCode, producti
         FROM kin_posts p WHERE ${CAN_READ} ORDER BY (p.id=$3) DESC,p.created_at DESC LIMIT 200`, [userId, kind,focusPost])).rows;
       const replies = rows.length ? (await client.query(`SELECT r.*,CASE WHEN $2='personal' THEN u.personal->>'name' ELSE u.character->>'name' END name FROM kin_replies r JOIN kin_users u ON u.id=r.author WHERE r.post_id=ANY($1::text[]) ORDER BY r.created_at,r.id`, [rows.map(row => row.id), kind])).rows : [];
       return {
-        version: 1, live: true, profileKind: kind,
+        version: 1, live: true, profileKind: kind, characterId:kind==='roleplay'?userId:null,accountHandle:owner.handle,
         profile: { ...(kind === 'personal' ? own.personal : own.character), handle: own.handle },
-        profiles: [{kind:'personal',name:own.personal.name,portrait:own.personal.portrait},{kind:'roleplay',name:own.character.name,portrait:own.character.portrait}],
+        profiles: [{kind:'personal',id:owner.id,name:owner.personal.name,portrait:owner.personal.portrait},{kind:'roleplay',id:owner.id,primary:true,handle:owner.handle,name:owner.character.name,portrait:owner.character.portrait},...characters.map(c=>({kind:'roleplay',id:c.id,primary:false,handle:c.handle,name:c.character.name,portrait:c.character.portrait}))],
         people: connections.filter(row => row.status === 'accepted').map(row => characterView(row, userId)),
         requests: connections.filter(row => row.status === 'pending' && row.recipient === userId).map(row => characterView(row, userId)),
         outgoing: connections.filter(row => row.status === 'pending' && row.requester === userId).map(row => ({ id: row.id, name: row.character.name, handle: row.handle })), invitations: [],
@@ -183,7 +185,7 @@ export async function createApplication({ db, origin, registrationCode, producti
       }
       case 'request': {
         const handle=text(data.handle,24,true).toLowerCase().replace(/^@/,'');
-        const target=(await client.query('SELECT id FROM kin_users WHERE handle=$1',[handle])).rows[0];
+        const target=(await client.query("SELECT id FROM kin_users WHERE handle=$1 AND ($2='roleplay' OR owner_id IS NULL)",[handle,kind])).rows[0];
         deny(!target || target.id===userId,404,'No available account with that handle.');
         const existing=await client.query('SELECT id FROM kin_connections WHERE profile_kind=$3 AND ((requester=$1 AND recipient=$2) OR (requester=$2 AND recipient=$1))',[userId,target.id,kind]);
         deny(existing.rows.length,409,'A connection or request already exists.');
@@ -246,7 +248,7 @@ export async function createApplication({ db, origin, registrationCode, producti
           const token=await transaction(async client=>{await client.query('INSERT INTO kin_users(id,handle,password_hash,recovery_hash,character) VALUES($1,$2,$3,$4,$5::jsonb)',[userId,handle,encoded,hash(recoveryCode),JSON.stringify(character)]);return newSession(client,userId);});
           res.setHeader('Set-Cookie',cookie(token));send(201,{recoveryCode});return;
         }
-        const account=(await query('SELECT id,password_hash,recovery_hash FROM kin_users WHERE handle=$1',[handle])).rows[0];
+        const account=(await query('SELECT id,password_hash,recovery_hash FROM kin_users WHERE handle=$1 AND owner_id IS NULL',[handle])).rows[0];
         if(route==='/api/auth/recover') {
           const recovery=text(body.recoveryCode,128,true);
           deny(!account || !timingSafeEqual(Buffer.from(hash(recovery)),Buffer.from(account.recovery_hash)),401,'That handle or recovery code is not valid.');
@@ -264,24 +266,38 @@ export async function createApplication({ db, origin, registrationCode, producti
         res.setHeader('Set-Cookie',cookie(token));send(200,{ok:true});return;
       }
       if(route.startsWith('/api/')) {
-        const user=await session(req);
+        let user=await session(req);
         if(req.method==='POST' && route==='/api/auth/logout') {await query('DELETE FROM kin_sessions WHERE token_hash=$1',[user.tokenHash]);res.setHeader('Set-Cookie',cookie('',0));send(200,{ok:true});return;}
         const kind=choice(req.headers['x-kin-profile'] || 'roleplay',['roleplay','personal']);
+        if(req.method==='POST'&&route==='/api/characters'){
+          await limited('characters:'+user.accountId,20,3600);
+          const handle=text(body.handle,24,true).toLowerCase();deny(!/^[a-z0-9_]{3,24}$/.test(handle),400,'Use 3–24 letters, numbers, or underscores for this character’s username.');
+          const name=text(body.name,60,true),fandom=choice(body.fandom,FANDOMS),characterId=randomUUID();
+          const character={name,fandom,role:text(body.role||'Original character',100),pronouns:'',bio:'',backstory:'',boundaries:'Ask before controlling my character or deciding a storyline outcome.',portrait:''};
+          const encoded=await passwordHash(randomBytes(48).toString('hex'));
+          await transaction(async client=>{await client.query('SELECT id FROM kin_users WHERE id=$1 FOR UPDATE',[user.accountId]);
+            const count=Number((await client.query('SELECT count(*)::integer n FROM kin_users WHERE owner_id=$1',[user.accountId])).rows[0].n);deny(count>=19,400,'You can have up to 20 roleplay profiles on this login.');
+            await client.query('INSERT INTO kin_users(id,handle,password_hash,recovery_hash,character,owner_id) VALUES($1,$2,$3,$4,$5::jsonb,$6)',[characterId,handle,encoded,hash(randomBytes(32).toString('hex')),JSON.stringify(character),user.accountId]);});
+          send(201,{id:characterId,handle,name});return;
+        }
+        const selectedCharacter=req.headers['x-kin-character'];
+        deny(kind==='personal'&&!!selectedCharacter,400,'Character selection applies only to roleplay profiles.');
+        if(selectedCharacter){const actor=(await query('SELECT id,handle,character FROM kin_users WHERE id=$1 AND (id=$2 OR owner_id=$2)',[id(selectedCharacter),user.accountId])).rows[0];deny(!actor,403,'That roleplay profile is unavailable.');user={...user,...actor};}
         if(await handleNotifications({req,route,url,body,user,kind,send}))return;
         if(await handleChats({req,route,url,body,user,kind,send,res}))return;
-        if(req.method==='GET' && route==='/api/state') {const focus=url.searchParams.has('post')?postId(url.searchParams.get('post')):null;const state=await stateFor(user.id,kind,focus);deny(focus&&!state.posts.some(p=>p.id===focus),404,'That post is unavailable.');send(200,state);return;}
+        if(req.method==='GET' && route==='/api/state') {const focus=url.searchParams.has('post')?postId(url.searchParams.get('post')):null;const state=await stateFor(user.id,kind,focus,user.accountId);deny(focus&&!state.posts.some(p=>p.id===focus),404,'That post is unavailable.');send(200,state);return;}
         if(req.method==='POST' && route==='/api/actions') {
           deny(!Array.isArray(body.actions) || body.actions.length<1 || body.actions.length>20,400,'Invalid changes.');
-          await limited(`writes:${user.id}`,180,60);
-          if(body.actions.some(action=>action?.type==='request'))await limited(`requests:${user.id}`,20,3600);
+          await limited(`writes:${user.accountId}`,180,60);
+          if(body.actions.some(action=>action?.type==='request'))await limited(`requests:${user.accountId}`,20,3600);
           await transaction(async client=>{for(const action of body.actions)await applyAction(client,user.id,action,kind);});
-          send(200,await stateFor(user.id,kind));return;
+          send(200,await stateFor(user.id,kind,null,user.accountId));return;
         }
         if(req.method==='GET' && route.startsWith('/api/media/')) {
           const mediaId=id(route.slice('/api/media/'.length));
-          const found=await query(`SELECT m.bytes FROM kin_media m WHERE m.id=$2 AND (m.owner=$1
-            OR EXISTS(SELECT 1 FROM kin_posts p WHERE p.image_id=m.id AND ${CAN_READ_MEDIA})
-            OR EXISTS(SELECT 1 FROM kin_users u JOIN kin_connections c ON ((c.requester=u.id AND c.recipient=$1) OR (c.recipient=u.id AND c.requester=$1)) WHERE c.status='accepted' AND c.profile_kind=m.profile_kind AND (CASE WHEN m.profile_kind='personal' THEN u.personal ELSE u.character END)->>'portrait'=('/api/media/'||m.id::text)))`,[user.id,mediaId]);
+          const found=await query(`SELECT m.bytes FROM kin_media m WHERE m.id=$2 AND EXISTS(SELECT viewer.id FROM kin_users viewer WHERE (viewer.id=$1 OR viewer.owner_id=$1) AND (m.profile_kind='roleplay' OR viewer.id=$1) AND (m.owner=viewer.id
+            OR EXISTS(SELECT 1 FROM kin_posts p WHERE p.image_id=m.id AND ${CAN_READ_MEDIA.replaceAll('$1','viewer.id')})
+            OR EXISTS(SELECT 1 FROM kin_users u JOIN kin_connections c ON ((c.requester=u.id AND c.recipient=viewer.id) OR (c.recipient=u.id AND c.requester=viewer.id)) WHERE c.status='accepted' AND c.profile_kind=m.profile_kind AND (CASE WHEN m.profile_kind='personal' THEN u.personal ELSE u.character END)->>'portrait'=('/api/media/'||m.id::text))))`,[user.accountId,mediaId]);
           deny(!found.rows[0],404,'That photo is unavailable.');res.writeHead(200,{'Content-Type':'image/jpeg'});res.end(Buffer.from(found.rows[0].bytes));return;
         }
         throw new HttpError(404,'Not found.');

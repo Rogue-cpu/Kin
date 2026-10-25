@@ -4,12 +4,16 @@
   let callbacks, active = false, generation = 0, refreshing = false, busy = false;
   let profileKind = 'personal';
   try { const selected=sessionStorage.getItem('kin.profile-kind');if(['personal','roleplay'].includes(selected))profileKind=selected; } catch {}
+  let characterId=null,primaryCharacterId=null;
+  try{if(profileKind==='roleplay')characterId=sessionStorage.getItem('kin.character-id')||null;}catch{}
   let gate, timer;
+  function adopt(next){characterId=next.characterId||null;primaryCharacterId=next.profiles?.find(p=>p.kind==='roleplay'&&p.primary)?.id||null;}
+  function persist(){try{sessionStorage.setItem('kin.profile-kind',profileKind);if(profileKind==='roleplay'&&characterId)sessionStorage.setItem('kin.character-id',characterId);else sessionStorage.removeItem('kin.character-id');}catch{}}
   async function api(path, data) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 20000);
     try {
-      const response = await fetch(path, { method: data === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store', headers: {'X-Kin-Profile':profileKind,...(data === undefined ? {} : {'Content-Type':'application/json'})}, body: data === undefined ? undefined : JSON.stringify(data), signal: controller.signal });
+      const response = await fetch(path, { method: data === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store', headers: {'X-Kin-Profile':profileKind,...(profileKind==='roleplay'&&characterId?{'X-Kin-Character':characterId}:{}),...(data === undefined ? {} : {'Content-Type':'application/json'})}, body: data === undefined ? undefined : JSON.stringify(data), signal: controller.signal });
       const result = await response.json();
       if (!response.ok) { const error = new Error(result.error || 'Kin could not complete that request.'); error.status = response.status; throw error; }
       return result;
@@ -112,7 +116,7 @@
     document.getElementById('recovery-continue').onclick=async()=>{if(busy)return;busy=true;try{await enter();}catch(error){document.getElementById('recovery-error').textContent=error.message;}finally{busy=false;}};
   }
   async function enter() {
-    const next=await api('/api/state'); active=true;generation+=1;
+    let next;try{next=await api('/api/state');}catch(error){if(characterId&&[403,404].includes(error.status)){characterId=null;next=await api('/api/state');}else throw error;}adopt(next);persist();active=true;generation+=1;
     callbacks.onState(next);toggleApp(true);
   }
   function diff(before, after) {
@@ -140,25 +144,23 @@
   async function refresh() {
     if(!active||refreshing||busy||callbacks.isBusy()||document.getElementById('modal').open)return;
     const revision=generation;refreshing=true;
-    try {const next=await api('/api/state');if(active&&revision===generation&&!callbacks.isBusy())callbacks.onRefresh(next);}
+    try {const next=await api('/api/state');if(active&&revision===generation&&!callbacks.isBusy()){adopt(next);callbacks.onRefresh(next);}}
     catch(error){if(error.status===401)authScreen('login',error.message);else throw error;}
     finally{refreshing=false;}
   }
   window.KinAccount={
     get active(){return active;},
     get busy(){return busy;},
-    async switchProfile(kind){
-      if (!['roleplay','personal'].includes(kind)) throw new Error('Choose a personal or roleplay profile.');
-      if (kind === profileKind) return;
-      if (!active || busy || callbacks.isBusy() || document.getElementById('modal').open) throw new Error('Finish or close your current post before switching profiles.');
-      const previous = profileKind; busy = true; generation += 1; profileKind = kind;
-      try {
-        const next = await api('/api/state');
-        callbacks.onState(next);
-        try { sessionStorage.setItem('kin.profile-kind', kind); } catch {}
-      } catch(error) { profileKind = previous; throw error; }
-      finally { busy = false; }
+    async switchProfile(value){
+      const kind=value==='personal'?'personal':'roleplay';
+      if(value!=='personal'&&value!=='roleplay'&&!/^roleplay:[a-f0-9-]{36}$/.test(value))throw new Error('Choose a personal or roleplay profile.');
+      const target=kind==='personal'?null:value==='roleplay'?primaryCharacterId:value.slice(9);
+      if(kind===profileKind&&target===characterId)return;
+      if(!active||busy||callbacks.isBusy()||document.getElementById('modal').open)throw new Error('Finish or close your current post before switching profiles.');
+      const previous={kind:profileKind,id:characterId};busy=true;generation++;profileKind=kind;characterId=target;
+      try{const next=await api('/api/state');adopt(next);persist();callbacks.onState(next);}catch(error){profileKind=previous.kind;characterId=previous.id;throw error;}finally{busy=false;}
     },
+    async createCharacter(data){if(!active||busy)throw new Error('Wait for the current change to finish.');busy=true;generation++;try{return await api('/api/characters',data);}finally{busy=false;}},
     async boot(hooks){
       callbacks=hooks;gate=document.getElementById('account-gate');
       if(location.protocol==='file:'){toggleApp(true);callbacks.onDemo();return;}
@@ -168,8 +170,8 @@
         timer=setInterval(()=>{if(document.visibilityState==='visible')refresh().catch(()=>{});},30000);
       }catch(error){clearPrivateView();toggleApp(false);gate.innerHTML=`<div class="auth-card"><h1>Kin is taking a moment.</h1><p class="auth-description">${escape(error.message)}</p><button class="button button-primary" id="account-retry">Try again</button></div>`;document.getElementById('account-retry').onclick=()=>location.reload();}
     },
-    async save(before,after){if(before.profileKind!==profileKind||after.profileKind!==profileKind)throw new Error('This draft belongs to a different profile. Refresh before saving.');generation+=1;return api('/api/actions',{actions:diff(before,after)});},
-    async act(type,data){generation+=1;const next=await api('/api/actions',{actions:[{type,data}]});callbacks.onRefresh(next);return next;},
+    async save(before,after){if(before.profileKind!==profileKind||after.profileKind!==profileKind||(profileKind==='roleplay'&&(before.characterId!==characterId||after.characterId!==characterId)))throw new Error('This draft belongs to a different profile. Refresh before saving.');generation+=1;const next=await api('/api/actions',{actions:diff(before,after)});adopt(next);return next;},
+    async act(type,data){const revision=++generation;const next=await api('/api/actions',{actions:[{type,data}]});if(revision===generation){adopt(next);callbacks.onRefresh(next);}return next;},
     refresh,
     async logout(){if(busy||callbacks.isBusy())return;busy=true;try{await api('/api/auth/logout',{});authScreen();}finally{busy=false;}},
     expired(message){authScreen('login',message);}

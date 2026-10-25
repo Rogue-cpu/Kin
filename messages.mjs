@@ -25,7 +25,7 @@ export function chatRoutes({ transaction, limited, deny, text, id, iceConfig, gi
         const row=(await client.query('SELECT a.* FROM kin_chat_assets a JOIN kin_messages m ON m.attachment_id=a.id WHERE a.id=$1',[assetId])).rows[0];
         deny(!row,404,'That attachment is unavailable.');
         const chat=(await client.query('SELECT profile_kind FROM kin_chats WHERE id=$1',[row.chat_id])).rows[0];
-        await authorize(client,user.id,chat.profile_kind,row.chat_id);return row;
+        const member=(await client.query("SELECT u.id FROM kin_chat_members members JOIN kin_users u ON u.id=members.user_id WHERE members.chat_id=$1 AND (u.id=$2 OR u.owner_id=$2) AND ($3='roleplay' OR u.id=$2) ORDER BY u.id LIMIT 1",[row.chat_id,user.accountId||user.id,chat.profile_kind])).rows[0];deny(!member,404,'That attachment is unavailable.');await authorize(client,member.id,chat.profile_kind,row.chat_id);return row;
       });
       const bytes=Buffer.from(asset.bytes),size=bytes.length,range=req.headers.range;
       let first=0,last=size-1;
@@ -49,7 +49,7 @@ export function chatRoutes({ transaction, limited, deny, text, id, iceConfig, gi
       });send(200,{chats});return true;
     }
     if(req.method==='POST'&&route==='/api/chats') {
-      await limited(`chat-create:${user.id}`,20,3600);
+      await limited(`chat-create:${user.accountId||user.id}`,20,3600);
       deny(!Array.isArray(body.members)||body.members.length<1||body.members.length>9,400,'Choose between 1 and 9 approved connections.');
       const members=[user.id,...body.members.map(id)];
       deny(new Set(members).size!==members.length,400,'Choose each connection once.');
@@ -81,7 +81,7 @@ export function chatRoutes({ transaction, limited, deny, text, id, iceConfig, gi
       });send(200,result);return true;
     }
     if(req.method==='POST') {
-      await limited(`chat-send:${user.id}`,60,60);
+      await limited(`chat-send:${user.accountId||user.id}`,60,60);
       const content=text(body.text||'',4000), messageId=id(body.id), replyToId=body.replyToId==null?null:id(body.replyToId);
       const giphyId=body.giphyId==null?null:body.giphyId;deny(giphyId!==null&&(typeof giphyId!=='string'||!/^[A-Za-z0-9]{1,64}$/.test(giphyId)),400,'Invalid GIPHY identifier.');
       deny(giphyId&&body.attachment,400,'Choose a GIF or a file attachment, not both.');

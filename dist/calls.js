@@ -3,10 +3,11 @@
   const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const icon=name=>`<svg aria-hidden="true"><use href="#i-${name}"/></svg>`;
   let kind='',generation=0,timer=null,active=null,incoming=null,stream=null,dialog=null,banner=null,loading=false,starting=false,cursor='0',selfId='',config=null,callStart=0;
+  let characterId=null,identity='';
   const peers=new Map(),requests=new Set();
   async function api(path,data){
     const version=generation,controller=new AbortController();requests.add(controller);const timeout=setTimeout(()=>controller.abort(),12000);
-    try{const response=await fetch(path,{method:data?'POST':'GET',credentials:'same-origin',cache:'no-store',headers:{'X-Kin-Profile':kind,...(data?{'Content-Type':'application/json'}:{})},body:data?JSON.stringify(data):undefined,signal:controller.signal});const result=await response.json();
+    try{const response=await fetch(path,{method:data?'POST':'GET',credentials:'same-origin',cache:'no-store',headers:{'X-Kin-Profile':kind,...(kind==='roleplay'&&characterId?{'X-Kin-Character':characterId}:{}),...(data?{'Content-Type':'application/json'}:{})},body:data?JSON.stringify(data):undefined,signal:controller.signal});const result=await response.json();
       if(version!==generation)throw new DOMException('Call changed','AbortError');
       if(!response.ok){const error=new Error(result.error||'The call could not connect.');error.status=response.status;throw error;}return result;
     }finally{clearTimeout(timeout);requests.delete(controller);}
@@ -19,12 +20,12 @@
     active=null;starting=false;loading=false;cursor='0';selfId='';config=null;callStart=0;
   }
   function leave(){
-    const call=active,profile=kind;cleanup();
-    if(call)fetch(`/api/calls/${call.id}/leave`,{method:'POST',credentials:'same-origin',keepalive:true,headers:{'Content-Type':'application/json','X-Kin-Profile':profile},body:'{}'}).catch(()=>{});
+    const call=active,profile=kind,character=characterId;cleanup();
+    if(call)fetch(`/api/calls/${call.id}/leave`,{method:'POST',credentials:'same-origin',keepalive:true,headers:{'Content-Type':'application/json','X-Kin-Profile':profile,...(profile==='roleplay'&&character?{'X-Kin-Character':character}:{})},body:'{}'}).catch(()=>{});
   }
-  function close(){leave();clearInterval(timer);timer=null;kind='';incoming=null;banner?.remove();banner=null;}
+  function close(){leave();clearInterval(timer);timer=null;kind='';characterId=null;identity='';incoming=null;banner?.remove();banner=null;}
   function sync(state){
-    const next=state.profileKind||'roleplay';if(kind===next&&timer)return;close();kind=next;timer=setInterval(tick,1500);tick();
+    const next=state.profileKind||'roleplay',key=next+':'+(state.characterId||'')+':'+(state.accountHandle||state.profile.handle);if(identity===key&&timer)return;close();kind=next;characterId=state.characterId||null;identity=key;timer=setInterval(tick,1500);tick();
   }
   function showIncoming(call){
     if(incoming?.id===call?.id)return;incoming=call;banner?.remove();banner=null;if(!call)return;

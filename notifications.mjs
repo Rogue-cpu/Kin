@@ -35,7 +35,7 @@ export function notificationRoutes({transaction,limited,deny,id,canRead}){
       });send(200,result);return true;
     }
     if(req.method==='POST'&&route==='/api/notifications/read'){
-      await limited(`activity-read:${user.id}`,120,60);
+      await limited(`activity-read:${user.accountId||user.id}`,120,60);
       const all=body.all===true;let ids=[],through=null;
       if(all){deny(typeof body.through!=='string'||!/^[1-9][0-9]{0,17}$/.test(body.through),400,'Refresh activity before marking it read.');through=body.through;}
       else{deny(!Array.isArray(body.ids)||!body.ids.length||body.ids.length>100,400,'Choose up to 100 notifications.');ids=body.ids.map(id);}
